@@ -6,13 +6,36 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		F51023CD2ED9316D00FC15AD /* Clerk in Frameworks */ = {isa = PBXBuildFile; productRef = F51023CC2ED9316D00FC15AD /* Clerk */; };
+		F51023E32ED9434C00FC15AD /* Auth in Frameworks */ = {isa = PBXBuildFile; productRef = F51023E22ED9434C00FC15AD /* Auth */; };
+		F51023E52ED9434C00FC15AD /* Functions in Frameworks */ = {isa = PBXBuildFile; productRef = F51023E42ED9434C00FC15AD /* Functions */; };
+		F51023E72ED9434C00FC15AD /* PostgREST in Frameworks */ = {isa = PBXBuildFile; productRef = F51023E62ED9434C00FC15AD /* PostgREST */; };
+		F51023E92ED9434C00FC15AD /* Realtime in Frameworks */ = {isa = PBXBuildFile; productRef = F51023E82ED9434C00FC15AD /* Realtime */; };
+		F51023EB2ED9445800FC15AD /* Storage in Frameworks */ = {isa = PBXBuildFile; productRef = F51023EA2ED9445800FC15AD /* Storage */; };
+		F51023EE2ED9454400FC15AD /* Supabase in Frameworks */ = {isa = PBXBuildFile; productRef = F51023ED2ED9454400FC15AD /* Supabase */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXFileReference section */
 		F55A0B5C2ED91AA500FB1AAE /* Frenco-Chat.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Frenco-Chat.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		F51023CF2ED931AB00FC15AD /* Exceptions for "Frenco-Chat" folder in "Frenco-Chat" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = F55A0B5B2ED91AA500FB1AAE /* Frenco-Chat */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		F55A0B5E2ED91AA500FB1AAE /* Frenco-Chat */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				F51023CF2ED931AB00FC15AD /* Exceptions for "Frenco-Chat" folder in "Frenco-Chat" target */,
+			);
 			path = "Frenco-Chat";
 			sourceTree = "<group>";
 		};
@@ -23,16 +46,31 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				F51023EE2ED9454400FC15AD /* Supabase in Frameworks */,
+				F51023EB2ED9445800FC15AD /* Storage in Frameworks */,
+				F51023E72ED9434C00FC15AD /* PostgREST in Frameworks */,
+				F51023E52ED9434C00FC15AD /* Functions in Frameworks */,
+				F51023E32ED9434C00FC15AD /* Auth in Frameworks */,
+				F51023E92ED9434C00FC15AD /* Realtime in Frameworks */,
+				F51023CD2ED9316D00FC15AD /* Clerk in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		F51023EC2ED9454400FC15AD /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
 		F55A0B532ED91AA500FB1AAE = {
 			isa = PBXGroup;
 			children = (
 				F55A0B5E2ED91AA500FB1AAE /* Frenco-Chat */,
+				F51023EC2ED9454400FC15AD /* Frameworks */,
 				F55A0B5D2ED91AA500FB1AAE /* Products */,
 			);
 			sourceTree = "<group>";
@@ -65,6 +103,13 @@
 			);
 			name = "Frenco-Chat";
 			packageProductDependencies = (
+				F51023CC2ED9316D00FC15AD /* Clerk */,
+				F51023E22ED9434C00FC15AD /* Auth */,
+				F51023E42ED9434C00FC15AD /* Functions */,
+				F51023E62ED9434C00FC15AD /* PostgREST */,
+				F51023E82ED9434C00FC15AD /* Realtime */,
+				F51023EA2ED9445800FC15AD /* Storage */,
+				F51023ED2ED9454400FC15AD /* Supabase */,
 			);
 			productName = "Frenco-Chat";
 			productReference = F55A0B5C2ED91AA500FB1AAE /* Frenco-Chat.app */;
@@ -94,6 +139,10 @@
 			);
 			mainGroup = F55A0B532ED91AA500FB1AAE;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				F51023CB2ED9316D00FC15AD /* XCRemoteSwiftPackageReference "clerk-ios" */,
+				F51023E12ED9434C00FC15AD /* XCRemoteSwiftPackageReference "supabase-swift" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = F55A0B5D2ED91AA500FB1AAE /* Products */;
 			projectDirPath = "";
@@ -249,10 +298,13 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = "Frenco-Chat/Frenco-Chat.entitlements";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = WMG5K497P6;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "Frenco-Chat/Info.plist";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -280,10 +332,13 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = "Frenco-Chat/Frenco-Chat.entitlements";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = WMG5K497P6;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "Frenco-Chat/Info.plist";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -328,6 +383,63 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		F51023CB2ED9316D00FC15AD /* XCRemoteSwiftPackageReference "clerk-ios" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/clerk/clerk-ios";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 0.71.2;
+			};
+		};
+		F51023E12ED9434C00FC15AD /* XCRemoteSwiftPackageReference "supabase-swift" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/supabase/supabase-swift";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 2.5.1;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		F51023CC2ED9316D00FC15AD /* Clerk */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = F51023CB2ED9316D00FC15AD /* XCRemoteSwiftPackageReference "clerk-ios" */;
+			productName = Clerk;
+		};
+		F51023E22ED9434C00FC15AD /* Auth */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = F51023E12ED9434C00FC15AD /* XCRemoteSwiftPackageReference "supabase-swift" */;
+			productName = Auth;
+		};
+		F51023E42ED9434C00FC15AD /* Functions */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = F51023E12ED9434C00FC15AD /* XCRemoteSwiftPackageReference "supabase-swift" */;
+			productName = Functions;
+		};
+		F51023E62ED9434C00FC15AD /* PostgREST */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = F51023E12ED9434C00FC15AD /* XCRemoteSwiftPackageReference "supabase-swift" */;
+			productName = PostgREST;
+		};
+		F51023E82ED9434C00FC15AD /* Realtime */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = F51023E12ED9434C00FC15AD /* XCRemoteSwiftPackageReference "supabase-swift" */;
+			productName = Realtime;
+		};
+		F51023EA2ED9445800FC15AD /* Storage */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = F51023E12ED9434C00FC15AD /* XCRemoteSwiftPackageReference "supabase-swift" */;
+			productName = Storage;
+		};
+		F51023ED2ED9454400FC15AD /* Supabase */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = F51023E12ED9434C00FC15AD /* XCRemoteSwiftPackageReference "supabase-swift" */;
+			productName = Supabase;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = F55A0B542ED91AA500FB1AAE /* Project object */;
 }
