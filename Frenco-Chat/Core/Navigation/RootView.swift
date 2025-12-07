@@ -14,23 +14,18 @@ struct RootView: View {
     
     var body: some View {
         Group {
-            if clerk.user != nil {
-                // User is signed in
-                MainTabView()
-                    .transition(.opacity.combined(with: .scale(scale: 0.95)))
-            } else {
-                // Not signed in - show sign in
+            if clerk.user == nil {
+                // Not signed in
                 SignInView()
-                    .transition(.opacity.combined(with: .scale(scale: 0.95)))
+            } else if !appData.onboardingCompleted {
+                // Signed in but not onboarded
+                OnboardingView()
+            } else {
+                // Signed in and onboarded
+                MainTabView()
             }
         }
-        .animation(.easeOut(duration: 0.4), value: clerk.user?.id)
+        .animation(.easeOut(duration: 0.3), value: clerk.user != nil)
+        .animation(.easeOut(duration: 0.3), value: appData.onboardingCompleted)
     }
-}
-
-// MARK: - Preview
-#Preview {
-    RootView()
-        .environment(\.clerk, Clerk.shared)
-        .environmentObject(AppDataManager())
 }

@@ -368,7 +368,14 @@ struct LessonView: View {
         )
         print("✅ Daily activity logged")
         
-        // 7. Refresh app data
+        // 7. Add vocabulary from this lesson to user's vocabulary
+        await appData.vocabularyService.addVocabularyFromLesson(
+            profileId: profileId,
+            lessonId: lesson.id
+        )
+        print("✅ Vocabulary added to user")
+        
+        // 8. Refresh app data
         await appData.refreshData()
         print("🎉 Lesson completion saved!")
     }
@@ -468,51 +475,58 @@ struct VocabularyIntroExercise: View {
             Spacer()
                 .frame(height: 20)
             
-            // Word Card
-            VStack(spacing: 20) {
-                // French word
-                Text(exercise.content.word ?? "Word")
-                    .font(.system(size: 42, weight: .light, design: .serif))
-                    .italic()
-                    .foregroundColor(.ink)
-                
-                // Pronunciation
-                if let ipa = exercise.content.pronunciationIpa, !ipa.isEmpty {
-                    Text("/\(ipa)/")
-                        .font(.system(size: 18, weight: .regular, design: .rounded))
-                        .foregroundColor(.wood)
+            // Word Card with Speaker Button
+            ZStack(alignment: .topTrailing) {
+                // Card content
+                VStack(spacing: 20) {
+                    // French word
+                    Text(exercise.content.word ?? "Word")
+                        .font(.system(size: 42, weight: .light, design: .serif))
+                        .italic()
+                        .foregroundColor(.ink)
+                    
+                    // Pronunciation
+                    if let ipa = exercise.content.pronunciationIpa, !ipa.isEmpty {
+                        Text("/\(ipa)/")
+                            .font(.system(size: 18, weight: .regular, design: .rounded))
+                            .foregroundColor(.wood)
+                    }
+                    
+                    Rectangle()
+                        .fill(Color.clay.opacity(0.3))
+                        .frame(height: 1)
+                        .padding(.horizontal, 40)
+                    
+                    // Translation
+                    Text(exercise.content.translation ?? "Translation")
+                        .font(.system(size: 24, weight: .medium, design: .rounded))
+                        .foregroundColor(.matcha)
+                    
+                    // Part of speech
+                    if let partOfSpeech = exercise.content.partOfSpeech, !partOfSpeech.isEmpty {
+                        Text(partOfSpeech)
+                            .font(.system(size: 12, weight: .medium, design: .rounded))
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 6)
+                            .background(Color.sakura)
+                            .clipShape(Capsule())
+                    }
                 }
+                .padding(.vertical, 32)
+                .padding(.horizontal, 24)
+                .frame(maxWidth: .infinity)
+                .background(Color.white)
+                .clipShape(RoundedRectangle(cornerRadius: FrencoDesign.cornerRadius))
+                .overlay(
+                    RoundedRectangle(cornerRadius: FrencoDesign.cornerRadius)
+                        .stroke(Color.wood.opacity(0.1), lineWidth: 1)
+                )
                 
-                Rectangle()
-                    .fill(Color.clay.opacity(0.3))
-                    .frame(height: 1)
-                    .padding(.horizontal, 40)
-                
-                // Translation
-                Text(exercise.content.translation ?? "Translation")
-                    .font(.system(size: 24, weight: .medium, design: .rounded))
-                    .foregroundColor(.matcha)
-                
-                // Part of speech
-                if let partOfSpeech = exercise.content.partOfSpeech, !partOfSpeech.isEmpty {
-                    Text(partOfSpeech)
-                        .font(.system(size: 12, weight: .medium, design: .rounded))
-                        .foregroundColor(.white)
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 6)
-                        .background(Color.sakura)
-                        .clipShape(Capsule())
-                }
+                // Speaker button - top right
+                SpeakerButton(audioUrl: exercise.audioUrl)
+                    .padding(12)
             }
-            .padding(.vertical, 32)
-            .padding(.horizontal, 24)
-            .frame(maxWidth: .infinity)
-            .background(Color.white)
-            .clipShape(RoundedRectangle(cornerRadius: FrencoDesign.cornerRadius))
-            .overlay(
-                RoundedRectangle(cornerRadius: FrencoDesign.cornerRadius)
-                    .stroke(Color.wood.opacity(0.1), lineWidth: 1)
-            )
             .padding(.horizontal, FrencoDesign.horizontalPadding)
             
             // Example sentence

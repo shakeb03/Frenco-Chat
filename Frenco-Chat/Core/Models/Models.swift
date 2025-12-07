@@ -23,6 +23,9 @@ struct Profile: Codable, Identifiable {
     let createdAt: Date
     var updatedAt: Date
     
+    var onboardingCompleted: Bool
+    var learningMotivation: String?
+    
     enum CodingKeys: String, CodingKey {
         case id
         case clerkUserId = "clerk_user_id"
@@ -35,6 +38,8 @@ struct Profile: Codable, Identifiable {
         case currentLevel = "current_level"
         case createdAt = "created_at"
         case updatedAt = "updated_at"
+        case onboardingCompleted = "onboarding_completed"
+        case learningMotivation = "learning_motivation"
     }
 }
 
@@ -193,6 +198,7 @@ struct Exercise: Codable, Identifiable {
     let content: ExerciseContent
     let hint: String?
     let hintFr: String?
+    let audioUrl: String?
     
     enum CodingKeys: String, CodingKey {
         case id
@@ -203,6 +209,7 @@ struct Exercise: Codable, Identifiable {
         case content
         case hint
         case hintFr = "hint_fr"
+        case audioUrl = "audio_url"
     }
 }
 
@@ -380,6 +387,8 @@ struct UserVocabulary: Codable, Identifiable {
     var lastReviewedAt: Date?
     var timesCorrect: Int
     var timesIncorrect: Int
+    var uniqueDaysCorrect: Int?
+    var lastCorrectDate: Date?
     var status: VocabularyStatus
     
     // Joined
@@ -396,6 +405,8 @@ struct UserVocabulary: Codable, Identifiable {
         case lastReviewedAt = "last_reviewed_at"
         case timesCorrect = "times_correct"
         case timesIncorrect = "times_incorrect"
+        case uniqueDaysCorrect = "unique_days_correct"
+        case lastCorrectDate = "last_correct_date"
         case status
         case vocabulary
     }
@@ -446,7 +457,11 @@ struct UserGrammarProgress: Codable, Identifiable {
     let grammarTopicId: UUID
     var masteryPercentage: Double
     var exercisesCompleted: Int
+    var uniqueDaysCorrect: Int?
+    var lastCorrectDate: Date?
     var lastPracticedAt: Date?
+    let createdAt: Date?
+    var updatedAt: Date?
     
     enum CodingKeys: String, CodingKey {
         case id
@@ -454,7 +469,11 @@ struct UserGrammarProgress: Codable, Identifiable {
         case grammarTopicId = "grammar_topic_id"
         case masteryPercentage = "mastery_percentage"
         case exercisesCompleted = "exercises_completed"
+        case uniqueDaysCorrect = "unique_days_correct"
+        case lastCorrectDate = "last_correct_date"
         case lastPracticedAt = "last_practiced_at"
+        case createdAt = "created_at"
+        case updatedAt = "updated_at"
     }
 }
 
@@ -541,3 +560,40 @@ struct ConversationFeedback: Codable {
     let suggestedVocabulary: [String]?
 }
 
+struct GrammarTopicWithProgress: Identifiable {
+    let id: UUID
+    let title: String
+    let titleFr: String
+    let description: String
+    let explanation: String
+    let sortOrder: Int
+    var masteryPercentage: Double
+    var uniqueDaysCorrect: Int
+    var exercisesCompleted: Int
+    var lastPracticedAt: Date?
+}
+
+// MARK: - Grammar Exercise
+struct GrammarExercise: Codable, Identifiable {
+    let id: UUID
+    let grammarTopicId: UUID
+    let exerciseType: String
+    let difficulty: Int
+    let content: ExerciseContent
+    let hint: String?
+    let hintFr: String?
+    let isActive: Bool?
+    let timesServed: Int?
+    let timesCorrect: Int?
+    let createdAt: Date?
+    
+    enum CodingKeys: String, CodingKey {
+        case id, difficulty, content, hint, isActive
+        case grammarTopicId = "grammar_topic_id"
+        case exerciseType = "exercise_type"
+        case hintFr = "hint_fr"
+        case timesServed = "times_served"
+        case timesCorrect = "times_correct"
+        case createdAt = "created_at"
+    }
+}

@@ -36,6 +36,7 @@ class AppDataManager: ObservableObject {
     @Published private(set) var vocabularyCategories: [VocabularyCategory] = []
     @Published private(set) var wordsToReview: [UserVocabulary] = []
     @Published private(set) var grammarTopics: [GrammarTopic] = []
+    @Published var onboardingCompleted: Bool = false
     
     // MARK: - Computed Properties
     var currentStreak: Int { stats?.currentStreak ?? 0 }
@@ -117,6 +118,10 @@ class AppDataManager: ObservableObject {
         return "\(mins)min"
     }
     
+    func checkOnboardingStatus() {
+        onboardingCompleted = profileService.profile?.onboardingCompleted ?? false
+    }
+    
     // MARK: - Initialize for User
     func initializeForUser(clerkUserId: String, email: String?, displayName: String?) async {
         isLoading = true
@@ -140,6 +145,8 @@ class AppDataManager: ObservableObject {
         // Sync profile data
         self.profile = profileService.profile
         self.stats = profileService.stats
+        
+        self.onboardingCompleted = profileService.profile?.onboardingCompleted ?? false
         
         guard let profile = self.profile else {
             errorMessage = "Failed to load profile"

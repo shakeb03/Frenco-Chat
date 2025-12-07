@@ -6,132 +6,254 @@
 //
 
 import SwiftUI
-import Clerk
 
 struct DojoView: View {
-    @Environment(\.clerk) private var clerk
     @EnvironmentObject var appData: AppDataManager
+    
+    // MARK: - State
+    @State private var vocabularyCategories: [VocabularyCategory] = []
+    @State private var grammarTopics: [GrammarTopicWithProgress] = []
+    @State private var wordsToReviewCount: Int = 0
+    @State private var hasActivityToday: Bool = false
+    @State private var isLoading: Bool = true
+    
+    // MARK: - Navigation
+    @State private var selectedCategory: VocabularyCategory?
+    @State private var selectedGrammarTopic: GrammarTopicWithProgress?
+    @State private var showQuickQuiz: Bool = false
+    @State private var showFullQuiz: Bool = false
     
     var body: some View {
         ScrollView(showsIndicators: false) {
-            VStack(alignment: .leading, spacing: FrencoDesign.verticalSpacing) {
+            VStack(alignment: .leading, spacing: 24) {
                 // Header
                 DojoHeader()
                 
-                // Quick Quiz Section
-                if appData.wordsToReview.count > 0 {
-                    QuickQuizCard(wordsToReview: appData.wordsToReview.count)
+                if isLoading {
+                    LoadingView()
+                } else {
+                    // Hero Card
+                    HeroRecommendationCard(
+                        wordsToReviewCount: wordsToReviewCount,
+                        weakGrammarTopic: weakestGrammarTopic,
+                        hasActivityToday: hasActivityToday,
+                        onTap: handleHeroTap
+                    )
+                    
+                    // Vocabulary Grove
+                    VocabularyGroveSection(
+                        categories: vocabularyCategories,
+                        onCategoryTap: { category in
+                            selectedCategory = category
+                        }
+                    )
+                    
+                    // Grammar Garden
+                    GrammarGardenSection(
+                        topics: grammarTopics,
+                        onTopicTap: { topic in
+                            selectedGrammarTopic = topic
+                        }
+                    )
+                    
+                    // Quiz Mode
+                    QuizModeSection(
+                        onQuickQuiz: { showQuickQuiz = true },
+                        onFullQuiz: { showFullQuiz = true }
+                    )
                 }
-                
-                // Grammar Garden
-                GrammarSection(topics: appData.grammarTopics)
-                
-                // Vocabulary Grove
-                VocabularySection(categories: appData.vocabularyCategories)
-                
-                Spacer()
-                    .frame(height: 100)
             }
-            .padding(.horizontal, FrencoDesign.horizontalPadding)
+            .padding(.horizontal, 20)
+            .padding(.bottom, 100)
         }
         .background(Color.paper.ignoresSafeArea())
-        .refreshable {
-            await appData.refreshData()
+        .task {
+            await loadDojoData()
+        }
+        .fullScreenCover(item: $selectedCategory) { category in
+            VocabularyReviewView(category: category)
+                .environmentObject(appData)
+        }
+        .fullScreenCover(item: $selectedGrammarTopic) { topic in
+            GrammarDrillView(topic: topic)
+                .environmentObject(appData)
+        }
+        .fullScreenCover(isPresented: $showQuickQuiz) {
+            QuizView(mode: .quick)
+                .environmentObject(appData)
+        }
+        .fullScreenCover(isPresented: $showFullQuiz) {
+            QuizView(mode: .full)
+                .environmentObject(appData)
+        }
+    }
+    
+    // MARK: - Computed Properties
+    
+    private var weakestGrammarTopic: GrammarTopicWithProgress? {
+        grammarTopics
+            .filter { $0.masteryPercentage < 70 && $0.exercisesCompleted > 0 }
+            .min { $0.masteryPercentage < $1.masteryPercentage }
+    }
+    
+    // MARK: - Methods
+    
+    private func loadDojoData() async {
+        guard let profileId = appData.profile?.id else { return }
+        
+        async let categories = appData.vocabularyService.fetchVocabularyCategories(profileId: profileId)
+        async let topics = appData.grammarService.fetchGrammarTopicsWithProgress(profileId: profileId)
+        async let wordsToReview = appData.vocabularyService.fetchWordsToReview(profileId: profileId)
+        async let activityToday = appData.progressService.hasActivityToday(profileId: profileId)
+        
+        vocabularyCategories = await categories
+        grammarTopics = await topics
+        await wordsToReview
+        wordsToReviewCount = appData.vocabularyService.wordsToReview.count
+        hasActivityToday = await activityToday
+        
+        isLoading = false
+    }
+    
+    private func handleHeroTap() {
+        if wordsToReviewCount > 0 {
+            // Open vocabulary review for all due words
+            if let firstCategory = vocabularyCategories.first {
+                selectedCategory = firstCategory
+            }
+        } else if let weakTopic = weakestGrammarTopic {
+            selectedGrammarTopic = weakTopic
+        } else {
+            showQuickQuiz = true
         }
     }
 }
 
-// MARK: - Dojo Header
+// MARK: - Header
+
 struct DojoHeader: View {
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("The Dojo")
-                .font(.system(size: 32, weight: .light, design: .serif))
+        VStack(alignment: .leading, spacing: 4) {
+            Text("Le Dojo")
+                .font(.custom("Cormorant Garamond", size: 32))
                 .italic()
                 .foregroundColor(.ink)
             
-            Text("MASTER YOUR FOUNDATIONS")
-                .font(.system(size: 11, weight: .medium, design: .rounded))
-                .tracking(2)
-                .foregroundColor(.wood)
+            Text("MAÎTRISEZ VOS FONDATIONS")
+                .font(.custom("Zen Maru Gothic", size: 12))
+                .tracking(1.5)
+                .foregroundColor(.clay)
         }
         .padding(.top, 16)
     }
 }
 
-// MARK: - Quick Quiz Card
-struct QuickQuizCard: View {
-    let wordsToReview: Int
+
+// MARK: - Hero Recommendation Card
+struct HeroRecommendationCard: View {
+    let wordsToReviewCount: Int
+    let weakGrammarTopic: GrammarTopicWithProgress?
+    let hasActivityToday: Bool
+    let onTap: () -> Void
     
-    var body: some View {
-        FrencoCard(backgroundColor: .matchaLight, showBorder: false) {
-            VStack(alignment: .leading, spacing: 16) {
-                HStack {
-                    VStack(alignment: .leading, spacing: 6) {
-                        HStack(spacing: 8) {
-                            Image(systemName: "flame.fill")
-                                .foregroundColor(.matcha)
-                            Text("\(wordsToReview) words to review")
-                                .font(.system(size: 14, weight: .medium, design: .rounded))
-                                .foregroundColor(.matcha)
-                        }
-                        
-                        Text("Keep your streak alive!")
-                            .font(.system(size: 13, weight: .regular, design: .rounded))
-                            .foregroundColor(.wood)
-                    }
-                    
-                    Spacer()
-                    
-                    Image(systemName: "arrow.right.circle.fill")
-                        .font(.system(size: 32))
-                        .foregroundColor(.matcha)
-                }
-            }
+    private var recommendation: (title: String, subtitle: String, icon: String, color: Color) {
+        if wordsToReviewCount > 0 {
+            return (
+                "\(wordsToReviewCount) words to review",
+                "Keep your vocabulary fresh",
+                "book.fill",
+                .matcha
+            )
+        } else if let topic = weakGrammarTopic {
+            return (
+                "Practice \(topic.title)",
+                "Strengthen your weak spots",
+                "pencil.and.outline",
+                .sakura
+            )
+        } else if !hasActivityToday {
+            return (
+                "Keep your streak!",
+                "Complete a quick quiz today",
+                "flame.fill",
+                .wood
+            )
+        } else {
+            return (
+                "You're all caught up!",
+                "Try a challenge quiz",
+                "star.fill",
+                .matcha
+            )
         }
     }
-}
-
-// MARK: - Grammar Section
-struct GrammarSection: View {
-    let topics: [GrammarTopic]
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            HStack {
-                Text("GRAMMAR")
-                    .font(.system(size: 11, weight: .medium, design: .rounded))
-                    .tracking(2)
-                    .foregroundColor(.wood)
+        Button(action: onTap) {
+            HStack(spacing: 16) {
+                // Icon
+                ZStack {
+                    Circle()
+                        .fill(recommendation.color.opacity(0.15))
+                        .frame(width: 56, height: 56)
+                    
+                    Image(systemName: recommendation.icon)
+                        .font(.system(size: 24))
+                        .foregroundColor(recommendation.color)
+                }
+                
+                // Text
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(recommendation.title)
+                        .font(.custom("Zen Maru Gothic", size: 18))
+                        .fontWeight(.semibold)
+                        .foregroundColor(.ink)
+                    
+                    Text(recommendation.subtitle)
+                        .font(.custom("Zen Maru Gothic", size: 14))
+                        .foregroundColor(.clay)
+                }
                 
                 Spacer()
                 
-                Text("Grammar Garden")
-                    .font(.system(size: 13, weight: .regular, design: .serif))
-                    .italic()
-                    .foregroundColor(.wood)
+                // Arrow
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundColor(.clay)
             }
+            .padding(20)
+            .background(Color.white)
+            .cornerRadius(16)
+            .shadow(color: .ink.opacity(0.06), radius: 8, x: 0, y: 4)
+        }
+        .buttonStyle(ScaleButtonStyle())
+    }
+}
+
+// MARK: - Vocabulary Grove Section
+
+struct VocabularyGroveSection: View {
+    let categories: [VocabularyCategory]
+    let onCategoryTap: (VocabularyCategory) -> Void
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            SectionHeader(title: "Vocabulary Grove", icon: "leaf.fill")
             
-            if topics.isEmpty {
-                FrencoCard {
-                    HStack {
-                        ProgressView()
-                            .tint(.matcha)
-                        Text("Loading...")
-                            .font(.system(size: 14, weight: .regular, design: .rounded))
-                            .foregroundColor(.wood)
-                            .padding(.leading, 8)
-                    }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 20)
-                }
+            if categories.isEmpty {
+                EmptyStateCard(
+                    message: "Complete lessons to unlock vocabulary review",
+                    icon: "book.closed"
+                )
             } else {
-                LazyVGrid(columns: [
-                    GridItem(.flexible(), spacing: 12),
-                    GridItem(.flexible(), spacing: 12)
-                ], spacing: 12) {
-                    ForEach(topics) { topic in
-                        GrammarTopicCard(topic: topic)
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 12) {
+                        ForEach(categories) { category in
+                            VocabularyCategoryCard(
+                                category: category,
+                                onTap: { onCategoryTap(category) }
+                            )
+                        }
                     }
                 }
             }
@@ -139,146 +261,248 @@ struct GrammarSection: View {
     }
 }
 
-// MARK: - Grammar Topic Card
-struct GrammarTopicCard: View {
-    let topic: GrammarTopic
-    
-    private var progress: Double {
-        topic.progress?.masteryPercentage ?? 0
-    }
-    
-    private var isLocked: Bool {
-        // First topic is always unlocked
-        topic.sortOrder > 1 && progress == 0 && topic.progress == nil
-    }
+struct VocabularyCategoryCard: View {
+    let category: VocabularyCategory
+    let onTap: () -> Void
     
     var body: some View {
-        FrencoCard {
+        Button(action: onTap) {
             VStack(alignment: .leading, spacing: 12) {
-                HStack {
-                    Image(systemName: isLocked ? "lock" : (topic.iconName ?? "book"))
-                        .font(.system(size: 16))
-                        .foregroundColor(isLocked ? .clay : .matcha)
+                // Icon
+                Image(systemName: category.iconName)
+                    .font(.system(size: 24))
+                    .foregroundColor(.matcha)
+                
+                // Name
+                Text(category.name)
+                    .font(.custom("Zen Maru Gothic", size: 14))
+                    .fontWeight(.medium)
+                    .foregroundColor(.ink)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.leading)
+                
+                // Word count
+                Text("\(category.wordCount) words")
+                    .font(.custom("Zen Maru Gothic", size: 12))
+                    .foregroundColor(.clay)
+                
+                // Progress bar
+                VStack(alignment: .leading, spacing: 4) {
+                    ProgressView(value: category.masteryPercentage, total: 100)
+                        .tint(.matcha)
                     
-                    Spacer()
-                    
-                    if !isLocked {
-                        Text("\(Int(progress))%")
-                            .font(.system(size: 12, weight: .medium, design: .rounded))
-                            .foregroundColor(.matcha)
+                    Text("\(Int(category.masteryPercentage))% mastered")
+                        .font(.custom("Zen Maru Gothic", size: 10))
+                        .foregroundColor(.clay)
+                }
+            }
+            .padding(16)
+            .frame(width: 150, alignment: .leading)
+            .background(Color.white)
+            .cornerRadius(12)
+            .shadow(color: .ink.opacity(0.04), radius: 4, x: 0, y: 2)
+        }
+        .buttonStyle(ScaleButtonStyle())
+    }
+}
+
+// MARK: - Grammar Garden Section
+
+struct GrammarGardenSection: View {
+    let topics: [GrammarTopicWithProgress]
+    let onTopicTap: (GrammarTopicWithProgress) -> Void
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            SectionHeader(title: "Grammar Garden", icon: "pencil.and.outline")
+            
+            if topics.isEmpty {
+                EmptyStateCard(
+                    message: "Grammar topics loading...",
+                    icon: "hourglass"
+                )
+            } else {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 12) {
+                        ForEach(topics) { topic in
+                            GrammarTopicCard(
+                                topic: topic,
+                                onTap: { onTopicTap(topic) }
+                            )
+                        }
                     }
                 }
+            }
+        }
+    }
+}
+
+struct GrammarTopicCard: View {
+    let topic: GrammarTopicWithProgress
+    let onTap: () -> Void
+    
+    var body: some View {
+        Button(action: onTap) {
+            VStack(alignment: .leading, spacing: 12) {
+                // Title
+                Text(topic.titleFr)
+                    .font(.custom("Zen Maru Gothic", size: 14))
+                    .fontWeight(.medium)
+                    .foregroundColor(.ink)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.leading)
                 
-                // English title from DB
+                // English title
                 Text(topic.title)
-                    .font(.system(size: 15, weight: .medium, design: .rounded))
-                    .foregroundColor(isLocked ? .clay : .ink)
+                    .font(.custom("Zen Maru Gothic", size: 12))
+                    .foregroundColor(.clay)
+                    .lineLimit(1)
                 
-                FrencoProgressBar(
-                    progress: progress / 100,
-                    height: 4,
-                    trackColor: isLocked ? .clay : .stone
+                Spacer()
+                
+                // Progress ring
+                ZStack {
+                    Circle()
+                        .stroke(Color.clay.opacity(0.2), lineWidth: 4)
+                    
+                    Circle()
+                        .trim(from: 0, to: topic.masteryPercentage / 100)
+                        .stroke(Color.sakura, style: StrokeStyle(lineWidth: 4, lineCap: .round))
+                        .rotationEffect(.degrees(-90))
+                    
+                    Text("\(Int(topic.masteryPercentage))%")
+                        .font(.custom("Zen Maru Gothic", size: 11))
+                        .fontWeight(.semibold)
+                        .foregroundColor(.ink)
+                }
+                .frame(width: 44, height: 44)
+            }
+            .padding(16)
+            .frame(width: 140, height: 160, alignment: .leading)
+            .background(Color.white)
+            .cornerRadius(12)
+            .shadow(color: .ink.opacity(0.04), radius: 4, x: 0, y: 2)
+        }
+        .buttonStyle(ScaleButtonStyle())
+    }
+}
+
+// MARK: - Quiz Mode Section
+
+struct QuizModeSection: View {
+    let onQuickQuiz: () -> Void
+    let onFullQuiz: () -> Void
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            SectionHeader(title: "Quiz Mode", icon: "questionmark.circle.fill")
+            
+            HStack(spacing: 12) {
+                QuizButton(
+                    title: "Quick Quiz",
+                    subtitle: "5 minutes",
+                    icon: "bolt.fill",
+                    color: .matcha,
+                    onTap: onQuickQuiz
+                )
+                
+                QuizButton(
+                    title: "Full Quiz",
+                    subtitle: "25 questions",
+                    icon: "list.bullet.clipboard.fill",
+                    color: .wood,
+                    onTap: onFullQuiz
                 )
             }
         }
     }
 }
 
-// MARK: - Vocabulary Section
-struct VocabularySection: View {
-    let categories: [VocabularyCategory]
+struct QuizButton: View {
+    let title: String
+    let subtitle: String
+    let icon: String
+    let color: Color
+    let onTap: () -> Void
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            HStack {
-                Text("VOCABULARY")
-                    .font(.system(size: 11, weight: .medium, design: .rounded))
-                    .tracking(2)
-                    .foregroundColor(.wood)
+        Button(action: onTap) {
+            VStack(spacing: 8) {
+                Image(systemName: icon)
+                    .font(.system(size: 24))
+                    .foregroundColor(color)
                 
-                Spacer()
+                Text(title)
+                    .font(.custom("Zen Maru Gothic", size: 14))
+                    .fontWeight(.medium)
+                    .foregroundColor(.ink)
                 
-                Text("Word Grove")
-                    .font(.system(size: 13, weight: .regular, design: .serif))
-                    .italic()
-                    .foregroundColor(.wood)
+                Text(subtitle)
+                    .font(.custom("Zen Maru Gothic", size: 12))
+                    .foregroundColor(.clay)
             }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 20)
+            .background(Color.white)
+            .cornerRadius(12)
+            .shadow(color: .ink.opacity(0.04), radius: 4, x: 0, y: 2)
+        }
+        .buttonStyle(ScaleButtonStyle())
+    }
+}
+
+// MARK: - Helper Components
+
+struct SectionHeader: View {
+    let title: String
+    let icon: String
+    
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: icon)
+                .font(.system(size: 16))
+                .foregroundColor(.matcha)
             
-            if categories.isEmpty {
-                FrencoCard {
-                    HStack {
-                        ProgressView()
-                            .tint(.matcha)
-                        Text("Loading...")
-                            .font(.system(size: 14, weight: .regular, design: .rounded))
-                            .foregroundColor(.wood)
-                            .padding(.leading, 8)
-                    }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 20)
-                }
-            } else {
-                VStack(spacing: 12) {
-                    ForEach(categories) { category in
-                        VocabularyRow(category: category)
-                    }
-                }
-            }
+            Text(title)
+                .font(.custom("Zen Maru Gothic", size: 16))
+                .fontWeight(.semibold)
+                .foregroundColor(.ink)
         }
     }
 }
 
-// MARK: - Vocabulary Row
-struct VocabularyRow: View {
-    let category: VocabularyCategory
+struct EmptyStateCard: View {
+    let message: String
+    let icon: String
     
     var body: some View {
-        FrencoCard {
-            HStack(spacing: 16) {
-                // Icon
-                ZStack {
-                    RoundedRectangle(cornerRadius: 12)
-                        .fill(Color.sakuraLight)
-                        .frame(width: 48, height: 48)
-                    
-                    Image(systemName: category.iconName)
-                        .font(.system(size: 20))
-                        .foregroundColor(.sakura)
-                }
-                
-                // Content
-                VStack(alignment: .leading, spacing: 6) {
-                    HStack {
-                        // English name
-                        Text(category.name)
-                            .font(.system(size: 15, weight: .medium, design: .rounded))
-                            .foregroundColor(.ink)
-                        
-                        Spacer()
-                        
-                        Text("\(category.wordCount) words")
-                            .font(.system(size: 12, weight: .regular, design: .rounded))
-                            .foregroundColor(.wood)
-                    }
-                    
-                    FrencoProgressBar(
-                        progress: category.masteryPercentage,
-                        height: 4,
-                        fillColor: .sakura
-                    )
-                }
-                
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 14, weight: .medium))
-                    .foregroundColor(.clay)
-            }
+        HStack(spacing: 12) {
+            Image(systemName: icon)
+                .font(.system(size: 20))
+                .foregroundColor(.clay)
+            
+            Text(message)
+                .font(.custom("Zen Maru Gothic", size: 14))
+                .foregroundColor(.clay)
         }
+        .frame(maxWidth: .infinity)
+        .padding(20)
+        .background(Color.clay.opacity(0.1))
+        .cornerRadius(12)
+    }
+}
+
+struct ScaleButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? 0.97 : 1)
+            .animation(.easeOut(duration: 0.2), value: configuration.isPressed)
     }
 }
 
 // MARK: - Preview
+
 #Preview {
     DojoView()
-        .environment(\.clerk, Clerk.shared)
         .environmentObject(AppDataManager())
 }

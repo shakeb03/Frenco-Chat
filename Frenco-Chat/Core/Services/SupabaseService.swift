@@ -288,6 +288,47 @@ class ProfileService: ObservableObject {
             print("❌ ProfileService Add Minutes Error: \(error)")
         }
     }
+    
+    // MARK: - Complete Onboarding
+    func completeOnboarding(
+        dailyGoalMinutes: Int,
+        currentLevel: String,
+        learningMotivation: String?
+    ) async {
+        guard let profile = profile else { return }
+        
+        struct OnboardingUpdate: Codable {
+            let daily_goal_minutes: Int
+            let current_level: String
+            let learning_motivation: String?
+            let onboarding_completed: Bool
+        }
+        
+        let update = OnboardingUpdate(
+            daily_goal_minutes: dailyGoalMinutes,
+            current_level: currentLevel,
+            learning_motivation: learningMotivation,
+            onboarding_completed: true
+        )
+        
+        do {
+            try await supabase
+                .from("profiles")
+                .update(update)
+                .eq("id", value: profile.id.uuidString)
+                .execute()
+            
+            // Update local state
+            self.profile?.dailyGoalMinutes = dailyGoalMinutes
+            self.profile?.currentLevel = currentLevel
+            self.profile?.learningMotivation = learningMotivation
+            self.profile?.onboardingCompleted = true
+            
+            print("✅ Onboarding completed")
+        } catch {
+            print("❌ Failed to complete onboarding: \(error)")
+        }
+    }
 }
 
 // MARK: - Content Service
@@ -453,6 +494,29 @@ class ProgressService: ObservableObject {
         }
     }
     
+    // MARK: - Check if User Practiced Today
+    func hasActivityToday(profileId: UUID) async -> Bool {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd"
+        let today = formatter.string(from: Date())
+        
+        do {
+            let activity: [DailyActivity] = try await supabase
+                .from("daily_activity")
+                .select()
+                .eq("profile_id", value: profileId.uuidString)
+                .eq("activity_date", value: today)
+                .execute()
+                .value
+            
+            return !activity.isEmpty
+            
+        } catch {
+            print("❌ ProgressService Activity Check Error: \(error)")
+            return false
+        }
+    }
+    
     // MARK: - Get Lesson Progress
     func fetchLessonProgress(profileId: UUID, lessonId: UUID) async -> UserLessonProgress? {
         do {
@@ -609,21 +673,28 @@ class VocabularyService: ObservableObject {
                 .value
             
             // Group by category
-            var categoryDict: [String: (total: Int, learned: Int)] = [:]
+            var categoryDict: [String: (total: Int, learned: Int, mastered: Int)] = [:]
             for word in vocab {
                 let cat = word.category ?? "Other"
-                let current = categoryDict[cat] ?? (0, 0)
+                let current = categoryDict[cat] ?? (0, 0, 0)
                 let isLearned = userVocab.contains { $0.vocabularyId == word.id && $0.status != .new }
-                categoryDict[cat] = (current.total + 1, current.learned + (isLearned ? 1 : 0))
+                let isMastered = userVocab.contains { $0.vocabularyId == word.id && $0.status == .mastered }
+                categoryDict[cat] = (
+                    current.total + 1,
+                    current.learned + (isLearned ? 1 : 0),
+                    current.mastered + (isMastered ? 1 : 0)
+                )
             }
             
             // Convert to array
             self.categories = categoryDict.map { key, value in
                 VocabularyCategory(
+                    id: key,
                     name: key.capitalized,
                     nameFr: key.capitalized,
                     wordCount: value.total,
                     learnedCount: value.learned,
+                    masteredCount: value.mastered,
                     iconName: categoryIcon(key)
                 )
             }.sorted { $0.name < $1.name }
@@ -632,6 +703,100 @@ class VocabularyService: ObservableObject {
             
         } catch {
             print("❌ VocabularyService Categories Error: \(error)")
+        }
+    }
+    
+    // MARK: - Fetch Vocabulary Categories with Stats
+    func fetchVocabularyCategories(profileId: UUID) async -> [VocabularyCategory] {
+        print("📖 VocabularyService: Fetching vocabulary categories...")
+        
+        do {
+            // 1. Get all vocabulary grouped by category
+            let allVocab: [Vocabulary] = try await supabase
+                .from("vocabulary")
+                .select()
+                .execute()
+                .value
+            
+            // 2. Get user's vocabulary progress
+            let userVocab: [UserVocabulary] = try await supabase
+                .from("user_vocabulary")
+                .select("*, vocabulary(*)")
+                .eq("profile_id", value: profileId.uuidString)
+                .execute()
+                .value
+            
+            // 3. Group vocabulary by category
+            var categoryDict: [String: (total: Int, learned: Int, mastered: Int)] = [:]
+            
+            for vocab in allVocab {
+                let category = vocab.category ?? "Uncategorized"
+                if categoryDict[category] == nil {
+                    categoryDict[category] = (total: 0, learned: 0, mastered: 0)
+                }
+                categoryDict[category]?.total += 1
+            }
+            
+            // 4. Count learned and mastered per category
+            for uv in userVocab {
+                guard let vocab = uv.vocabulary else { continue }
+                let category = vocab.category ?? "Uncategorized"
+                
+                if categoryDict[category] != nil {
+                    categoryDict[category]?.learned += 1
+                    if uv.status == .mastered {
+                        categoryDict[category]?.mastered += 1
+                    }
+                }
+            }
+            
+            // 5. Convert to array
+            let categories = categoryDict.map { (key, value) in
+                VocabularyCategory(
+                    id: key,
+                    name: key,
+                    nameFr: key,  // Same for now, can localize later
+                    wordCount: value.total,
+                    learnedCount: value.learned,
+                    masteredCount: value.mastered,
+                    iconName: "book.fill"  // Default icon
+                )
+            }.sorted { $0.name < $1.name }
+            
+            print("✅ VocabularyService: Found \(categories.count) categories")
+            return categories
+            
+        } catch {
+            print("❌ VocabularyService Categories Error: \(error)")
+            return []
+        }
+    }
+
+    // MARK: - Fetch Words Due by Category
+    func fetchWordsDueByCategory(profileId: UUID, category: String) async -> [UserVocabulary] {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd"
+        let today = formatter.string(from: Date())
+        
+        print("📖 VocabularyService: Fetching words due for category: \(category)")
+        
+        do {
+            let words: [UserVocabulary] = try await supabase
+                .from("user_vocabulary")
+                .select("*, vocabulary!inner(*)")
+                .eq("profile_id", value: profileId.uuidString)
+                .lte("next_review_date", value: today)
+                .eq("vocabulary.category", value: category)
+                .limit(20)
+                .execute()
+                .value
+            
+            print("✅ VocabularyService: \(words.count) words due in \(category)")
+            return words
+            
+        } catch {
+            print("❌ VocabularyService Words Due Error: \(error)")
+            return []
         }
     }
     
@@ -660,6 +825,211 @@ class VocabularyService: ObservableObject {
         }
     }
     
+    // MARK: - Add Vocabulary From Completed Lesson
+    func addVocabularyFromLesson(profileId: UUID, lessonId: UUID) async {
+        print("📖 VocabularyService: Adding vocabulary from lesson...")
+        
+        do {
+            // 1. Get all vocabulary_intro exercises from this lesson
+            let exercises: [Exercise] = try await supabase
+                .from("exercises")
+                .select()
+                .eq("lesson_id", value: lessonId.uuidString)
+                .eq("exercise_type", value: "vocabulary_intro")
+                .execute()
+                .value
+            
+            print("📖 Found \(exercises.count) vocabulary exercises")
+            
+            // 2. For each exercise, extract word and find in vocabulary table
+            for exercise in exercises {
+                guard let word = exercise.content.word else {
+                    continue
+                }
+                
+                // 3. Find vocabulary record by word
+                let vocabRecords: [Vocabulary] = try await supabase
+                    .from("vocabulary")
+                    .select()
+                    .eq("word", value: word)
+                    .limit(1)
+                    .execute()
+                    .value
+                
+                guard let vocab = vocabRecords.first else {
+                    print("⚠️ Vocabulary not found for word: \(word)")
+                    continue
+                }
+                
+                // 4. Check if user already has this word
+                let existing: [UserVocabulary] = try await supabase
+                    .from("user_vocabulary")
+                    .select()
+                    .eq("profile_id", value: profileId.uuidString)
+                    .eq("vocabulary_id", value: vocab.id.uuidString)
+                    .execute()
+                    .value
+                
+                if existing.isEmpty {
+                    // 5. Insert new user_vocabulary with initial SM-2 values
+                    let tomorrow = Calendar.current.date(byAdding: .day, value: 1, to: Date())!
+                    let formatter = DateFormatter()
+                    formatter.dateFormat = "yyyy-MM-dd"
+                    let nextReviewDate = formatter.string(from: tomorrow)
+                    
+                    let newUserVocab: [String: AnyJSON] = [
+                        "profile_id": .string(profileId.uuidString),
+                        "vocabulary_id": .string(vocab.id.uuidString),
+                        "ease_factor": .double(2.5),
+                        "interval_days": .integer(1),
+                        "repetitions": .integer(0),
+                        "next_review_date": .string(nextReviewDate),
+                        "times_correct": .integer(0),
+                        "times_incorrect": .integer(0),
+                        "unique_days_correct": .integer(0),
+                        "status": .string("new")
+                    ]
+                    
+                    try await supabase
+                        .from("user_vocabulary")
+                        .insert(newUserVocab)
+                        .execute()
+                    
+                    print("✅ Added vocabulary: \(word)")
+                } else {
+                    print("⏭️ Already has vocabulary: \(word)")
+                }
+            }
+            
+            print("✅ VocabularyService: Finished adding vocabulary from lesson")
+            
+        } catch {
+            print("❌ VocabularyService Add Vocabulary Error: \(error)")
+        }
+    }
+    
+    // MARK: - Update Review (SM-2 Algorithm with Mastery)
+    func updateReview(userVocabId: UUID, isCorrect: Bool) async {
+        print("📖 VocabularyService: Updating review...")
+        
+        do {
+            // 1. Fetch current user_vocabulary record
+            let records: [UserVocabulary] = try await supabase
+                .from("user_vocabulary")
+                .select()
+                .eq("id", value: userVocabId.uuidString)
+                .limit(1)
+                .execute()
+                .value
+            
+            guard var vocab = records.first else {
+                print("❌ UserVocabulary not found")
+                return
+            }
+            
+            // 2. Get current values
+            var easeFactor = vocab.easeFactor
+            var interval = vocab.intervalDays
+            var repetitions = vocab.repetitions
+            var timesCorrect = vocab.timesCorrect
+            var timesIncorrect = vocab.timesIncorrect
+            var uniqueDaysCorrect = vocab.uniqueDaysCorrect ?? 0
+            let lastCorrectDate = vocab.lastCorrectDate
+            
+            // 3. Today's date
+            let formatter = DateFormatter()
+            formatter.dateFormat = "yyyy-MM-dd"
+            let todayString = formatter.string(from: Date())
+            let today = formatter.date(from: todayString)!
+            
+            // 4. Apply SM-2 algorithm
+            if isCorrect {
+                timesCorrect += 1
+                
+                // Check if this is a new day for correct answer
+                if let lastDate = lastCorrectDate {
+                    let lastDateOnly = formatter.string(from: lastDate)
+                    if lastDateOnly != todayString {
+                        uniqueDaysCorrect += 1
+                    }
+                } else {
+                    uniqueDaysCorrect += 1
+                }
+                
+                // SM-2: Correct response
+                if repetitions == 0 {
+                    interval = 1
+                } else if repetitions == 1 {
+                    interval = 6
+                } else {
+                    interval = Int(Double(interval) * easeFactor)
+                }
+                repetitions += 1
+                
+                // Ease factor adjustment (quality = 4 for correct)
+                let quality = 4.0
+                let qualityDiff = 5.0 - quality
+                let adjustment = 0.1 - qualityDiff * (0.08 + qualityDiff * 0.02)
+                easeFactor = easeFactor + adjustment
+                
+            } else {
+                timesIncorrect += 1
+                
+                // SM-2: Incorrect response - reset
+                repetitions = 0
+                interval = 1
+                
+                // Ease factor adjustment (quality = 2 for incorrect)
+                let quality = 2.0
+                let qualityDiff = 5.0 - quality
+                let adjustment = 0.1 - qualityDiff * (0.08 + qualityDiff * 0.02)
+                easeFactor = easeFactor + adjustment
+            }
+            
+            // 5. Ease factor floor
+            easeFactor = max(1.3, easeFactor)
+            
+            // 6. Calculate next review date
+            let nextReview = Calendar.current.date(byAdding: .day, value: interval, to: today)!
+            let nextReviewString = formatter.string(from: nextReview)
+            
+            // 7. Determine status
+            var status = "learning"
+            if uniqueDaysCorrect >= 5 {
+                status = "mastered"
+            }
+            
+            // 8. Build update payload
+            var updates: [String: AnyJSON] = [
+                "ease_factor": .double(easeFactor),
+                "interval_days": .integer(interval),
+                "repetitions": .integer(repetitions),
+                "next_review_date": .string(nextReviewString),
+                "times_correct": .integer(timesCorrect),
+                "times_incorrect": .integer(timesIncorrect),
+                "unique_days_correct": .integer(uniqueDaysCorrect),
+                "status": .string(status),
+                "last_reviewed_at": .string(ISO8601DateFormatter().string(from: Date()))
+            ]
+            
+            if isCorrect {
+                updates["last_correct_date"] = .string(todayString)
+            }
+            
+            // 9. Update database
+            try await supabase
+                .from("user_vocabulary")
+                .update(updates)
+                .eq("id", value: userVocabId.uuidString)
+                .execute()
+            
+            print("✅ VocabularyService: Review updated - Next: \(nextReviewString), Status: \(status)")
+            
+        } catch {
+            print("❌ VocabularyService Update Review Error: \(error)")
+        }
+    }
+    
     private func categoryIcon(_ name: String) -> String {
         switch name.lowercased() {
         case "greetings": return "hand.wave"
@@ -676,17 +1046,19 @@ class VocabularyService: ObservableObject {
 
 // Helper struct for categories
 struct VocabularyCategory: Identifiable {
-    let id = UUID()
+    let id: String  // Changed from UUID() to String (category name as ID)
     let name: String
     let nameFr: String
     let wordCount: Int
     let learnedCount: Int
+    let masteredCount: Int
     let iconName: String
     
     var masteryPercentage: Double {
-        wordCount > 0 ? Double(learnedCount) / Double(wordCount) : 0
+        wordCount > 0 ? Double(masteredCount) / Double(wordCount) * 100 : 0
     }
 }
+
 
 // MARK: - Conversation Service
 @MainActor
@@ -780,6 +1152,173 @@ class GrammarService: ObservableObject {
             
         } catch {
             print("❌ GrammarService Topics Error: \(error)")
+        }
+    }
+    
+    // MARK: - Fetch Grammar Topics with User Progress
+    func fetchGrammarTopicsWithProgress(profileId: UUID) async -> [GrammarTopicWithProgress] {
+        print("📖 GrammarService: Fetching grammar topics with progress...")
+        
+        do {
+            // 1. Get all grammar topics
+            let topics: [GrammarTopic] = try await supabase
+                .from("grammar_topics")
+                .select()
+                .eq("is_published", value: true)
+                .order("sort_order")
+                .execute()
+                .value
+            
+            // 2. Get user's grammar progress
+            let userProgress: [UserGrammarProgress] = try await supabase
+                .from("user_grammar_progress")
+                .select()
+                .eq("profile_id", value: profileId.uuidString)
+                .execute()
+                .value
+            
+            // 3. Create lookup dictionary
+            var progressDict: [UUID: UserGrammarProgress] = [:]
+            for progress in userProgress {
+                progressDict[progress.grammarTopicId] = progress
+            }
+            
+            // 4. Combine topics with progress
+            let topicsWithProgress = topics.map { topic in
+                let progress = progressDict[topic.id]
+                return GrammarTopicWithProgress(
+                    id: topic.id,
+                    title: topic.title,
+                    titleFr: topic.titleFr,
+                    description: topic.description ?? "",
+                    explanation: topic.explanation ?? "",
+                    sortOrder: topic.sortOrder,
+                    masteryPercentage: progress?.masteryPercentage ?? 0,
+                    uniqueDaysCorrect: progress?.uniqueDaysCorrect ?? 0,
+                    exercisesCompleted: progress?.exercisesCompleted ?? 0,
+                    lastPracticedAt: progress?.lastPracticedAt
+                )
+            }
+            
+            print("✅ GrammarService: Found \(topicsWithProgress.count) topics")
+            return topicsWithProgress
+            
+        } catch {
+            print("❌ GrammarService Topics with Progress Error: \(error)")
+            return []
+        }
+    }
+
+    // MARK: - Fetch Grammar Exercises for Topic
+    func fetchGrammarExercises(topicId: UUID, difficulty: ClosedRange<Int>? = nil, limit: Int = 10) async -> [GrammarExercise] {
+        print("📖 GrammarService: Fetching exercises for topic...")
+        
+        do {
+            var query = supabase
+                .from("grammar_exercises")
+                .select()
+                .eq("grammar_topic_id", value: topicId.uuidString)
+                .eq("is_active", value: true)
+            
+            if let diff = difficulty {
+                query = query
+                    .gte("difficulty", value: diff.lowerBound)
+                    .lte("difficulty", value: diff.upperBound)
+            }
+            
+            let exercises: [GrammarExercise] = try await query
+                .limit(limit)
+                .execute()
+                .value
+            
+            print("✅ GrammarService: Found \(exercises.count) exercises")
+            return exercises
+            
+        } catch {
+            print("❌ GrammarService Exercises Error: \(error)")
+            return []
+        }
+    }
+
+    // MARK: - Update Grammar Progress
+    func updateGrammarProgress(profileId: UUID, topicId: UUID, isCorrect: Bool) async {
+        print("📖 GrammarService: Updating grammar progress...")
+        
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd"
+        let todayString = formatter.string(from: Date())
+        
+        do {
+            // 1. Check if progress record exists
+            let existing: [UserGrammarProgress] = try await supabase
+                .from("user_grammar_progress")
+                .select()
+                .eq("profile_id", value: profileId.uuidString)
+                .eq("grammar_topic_id", value: topicId.uuidString)
+                .execute()
+                .value
+            
+            if var progress = existing.first {
+                // 2a. Update existing progress
+                var uniqueDaysCorrect = progress.uniqueDaysCorrect ?? 0
+                let lastCorrectDate = progress.lastCorrectDate
+                
+                if isCorrect {
+                    // Check if new day
+                    if let lastDate = lastCorrectDate {
+                        let lastDateString = formatter.string(from: lastDate)
+                        if lastDateString != todayString {
+                            uniqueDaysCorrect += 1
+                        }
+                    } else {
+                        uniqueDaysCorrect += 1
+                    }
+                }
+                
+                // Calculate mastery percentage (5 unique days = 100%)
+                let masteryPercentage = min(Double(uniqueDaysCorrect) / 5.0 * 100, 100)
+                
+                var updates: [String: AnyJSON] = [
+                    "exercises_completed": .integer(progress.exercisesCompleted + 1),
+                    "mastery_percentage": .double(masteryPercentage),
+                    "unique_days_correct": .integer(uniqueDaysCorrect),
+                    "last_practiced_at": .string(ISO8601DateFormatter().string(from: Date()))
+                ]
+                
+                if isCorrect {
+                    updates["last_correct_date"] = .string(todayString)
+                }
+                
+                try await supabase
+                    .from("user_grammar_progress")
+                    .update(updates)
+                    .eq("id", value: progress.id.uuidString)
+                    .execute()
+                
+                print("✅ GrammarService: Progress updated")
+                
+            } else {
+                // 2b. Create new progress record
+                let newProgress: [String: AnyJSON] = [
+                    "profile_id": .string(profileId.uuidString),
+                    "grammar_topic_id": .string(topicId.uuidString),
+                    "mastery_percentage": .double(isCorrect ? 20 : 0),
+                    "exercises_completed": .integer(1),
+                    "unique_days_correct": .integer(isCorrect ? 1 : 0),
+                    "last_correct_date": isCorrect ? .string(todayString) : .null,
+                    "last_practiced_at": .string(ISO8601DateFormatter().string(from: Date()))
+                ]
+                
+                try await supabase
+                    .from("user_grammar_progress")
+                    .insert(newProgress)
+                    .execute()
+                
+                print("✅ GrammarService: Progress created")
+            }
+            
+        } catch {
+            print("❌ GrammarService Update Progress Error: \(error)")
         }
     }
 }
