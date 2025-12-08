@@ -99,6 +99,25 @@ class ProfileService: ObservableObject {
         }
     }
     
+    // MARK: - Increment Conversations
+    func incrementConversations() async {
+        guard let stats = stats else { return }
+        
+        do {
+            try await supabase
+                .from("user_stats")
+                .update(["total_conversations": stats.totalConversations + 1])
+                .eq("profile_id", value: stats.profileId.uuidString)
+                .execute()
+            
+            // Update local state
+            self.stats?.totalConversations += 1
+            print("✅ Incremented total conversations")
+        } catch {
+            print("❌ Failed to increment conversations: \(error)")
+        }
+    }
+    
     // MARK: - Fetch Stats
     func fetchStats() async {
         guard let profileId = profile?.id else {
@@ -1062,49 +1081,166 @@ struct VocabularyCategory: Identifiable {
 
 // MARK: - Conversation Service
 @MainActor
-class ConversationService: ObservableObject {
-    @Published var scenarios: [ConversationScenario] = []
-    @Published var recentConversations: [UserConversation] = []
+class ConversationService {
+    
+    // MARK: - Published Data (for AppDataManager to sync)
+    var scenarios: [ConversationScenario] = []
+    var recentConversations: [Conversation] = []
+    
+    // MARK: - Insert/Update Structs
+    private struct NewConversation: Codable {
+        let user_id: String
+        let scenario_id: String
+        let status: String
+        let message_count: Int
+        let corrections_count: Int
+    }
+    
+    private struct ConversationUpdate: Codable {
+        var status: String?
+        var completed_at: String?
+        var message_count: Int?
+        var corrections_count: Int?
+        var vocabulary_practiced: [String]?
+    }
+    
+    private struct NewMessage: Codable {
+        let conversation_id: String
+        let role: String
+        let content: String
+        let correction: String?
+        let vocabulary_used: [String]?
+        let is_goal_complete: Bool
+        let sort_order: Int
+    }
     
     // MARK: - Fetch Scenarios
     func fetchScenarios() async {
-        print("💬 ConversationService: Fetching scenarios...")
-        
         do {
             let response: [ConversationScenario] = try await supabase
                 .from("conversation_scenarios")
                 .select()
-                .eq("is_published", value: true)
-                .order("difficulty")
+                .eq("is_active", value: true)
+                .order("sort_order", ascending: true)
                 .execute()
                 .value
             
             self.scenarios = response
-            print("✅ ConversationService: Fetched \(response.count) scenarios")
+            print("✅ Fetched \(response.count) scenarios")
         } catch {
-            print("❌ ConversationService Scenarios Error: \(error)")
+            print("❌ Fetch scenarios error: \(error)")
         }
     }
     
     // MARK: - Fetch Recent Conversations
-    func fetchRecentConversations(profileId: UUID, limit: Int = 10) async {
-        print("💬 ConversationService: Fetching recent conversations...")
-        
+    func fetchRecentConversations(profileId: UUID) async {
         do {
-            let conversations: [UserConversation] = try await supabase
-                .from("user_conversations")
+            let response: [Conversation] = try await supabase
+                .from("conversations")
                 .select()
-                .eq("profile_id", value: profileId.uuidString)
-                .order("started_at", ascending: false)
-                .limit(limit)
+                .eq("user_id", value: profileId.uuidString)
+                .order("created_at", ascending: false)
+                .limit(10)
                 .execute()
                 .value
             
-            self.recentConversations = conversations
-            print("✅ ConversationService: Fetched \(conversations.count) conversations")
+            self.recentConversations = response
+            print("✅ Fetched \(response.count) recent conversations")
         } catch {
-            print("❌ ConversationService Recent Error: \(error)")
+            print("❌ Fetch recent conversations error: \(error)")
         }
+    }
+    
+    // MARK: - Create Conversation
+    func createConversation(userId: String, scenarioId: UUID) async throws -> Conversation {
+        let newConversation = NewConversation(
+            user_id: userId,
+            scenario_id: scenarioId.uuidString,
+            status: "active",
+            message_count: 0,
+            corrections_count: 0
+        )
+        
+        let response: Conversation = try await supabase
+            .from("conversations")
+            .insert(newConversation)
+            .select()
+            .single()
+            .execute()
+            .value
+        
+        return response
+    }
+    
+    // MARK: - Update Conversation
+    func updateConversation(
+        conversationId: UUID,
+        status: ConversationStatus? = nil,
+        messageCount: Int? = nil,
+        correctionsCount: Int? = nil,
+        vocabularyPracticed: [String]? = nil
+    ) async throws {
+        var update = ConversationUpdate()
+        
+        if let status = status {
+            update.status = status.rawValue
+            if status == .completed {
+                update.completed_at = ISO8601DateFormatter().string(from: Date())
+            }
+        }
+        update.message_count = messageCount
+        update.corrections_count = correctionsCount
+        update.vocabulary_practiced = vocabularyPracticed
+        
+        try await supabase
+            .from("conversations")
+            .update(update)
+            .eq("id", value: conversationId.uuidString)
+            .execute()
+    }
+    
+    // MARK: - Save Message
+    func saveMessage(
+        conversationId: UUID,
+        role: MessageRole,
+        content: String,
+        correction: String? = nil,
+        vocabularyUsed: [String]? = nil,
+        isGoalComplete: Bool = false,
+        sortOrder: Int
+    ) async throws -> ConversationMessage {
+        let newMessage = NewMessage(
+            conversation_id: conversationId.uuidString,
+            role: role.rawValue,
+            content: content,
+            correction: correction,
+            vocabulary_used: vocabularyUsed,
+            is_goal_complete: isGoalComplete,
+            sort_order: sortOrder
+        )
+        
+        let response: ConversationMessage = try await supabase
+            .from("conversation_messages")
+            .insert(newMessage)
+            .select()
+            .single()
+            .execute()
+            .value
+        
+        return response
+    }
+    
+    // MARK: - Fetch Messages for Conversation
+    func fetchMessages(conversationId: UUID) async throws -> [ConversationMessage] {
+        let response: [ConversationMessage] = try await supabase
+            .from("conversation_messages")
+            .select()
+            .eq("conversation_id", value: conversationId.uuidString)
+            .order("sort_order", ascending: true)
+            .execute()
+            .value
+        
+        return response
     }
 }
 

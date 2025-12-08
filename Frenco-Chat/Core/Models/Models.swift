@@ -482,25 +482,28 @@ struct ConversationScenario: Codable, Identifiable {
     let id: UUID
     let title: String
     let titleFr: String
-    let description: String?
-    let context: String?
-    let aiPersona: String?
-    let difficulty: Int
-    let levelId: UUID?
-    let iconName: String?
-    let imageUrl: String?
-    let keyPhrases: [KeyPhrase]?
-    let isPublished: Bool
+    let description: String
+    let iconName: String
+    let level: String
+    let aiRole: String
+    let openingMessage: String
+    let goalDescription: String
+    let targetVocabulary: [String]
+    let systemPrompt: String
+    let sortOrder: Int
+    let isActive: Bool
     
     enum CodingKeys: String, CodingKey {
-        case id, title, description, context, difficulty
+        case id, title, description, level
         case titleFr = "title_fr"
-        case aiPersona = "ai_persona"
-        case levelId = "level_id"
         case iconName = "icon_name"
-        case imageUrl = "image_url"
-        case keyPhrases = "key_phrases"
-        case isPublished = "is_published"
+        case aiRole = "ai_role"
+        case openingMessage = "opening_message"
+        case goalDescription = "goal_description"
+        case targetVocabulary = "target_vocabulary"
+        case systemPrompt = "system_prompt"
+        case sortOrder = "sort_order"
+        case isActive = "is_active"
     }
 }
 
@@ -509,55 +512,11 @@ struct KeyPhrase: Codable {
     let english: String
 }
 
-// MARK: - User Conversation
-struct UserConversation: Codable, Identifiable {
-    let id: UUID
-    let profileId: UUID
-    let scenarioId: UUID?
-    var messages: [ChatMessage]
-    var grammarScore: Int?
-    var vocabularyScore: Int?
-    var fluencyScore: Int?
-    var overallScore: Int?
-    var feedback: ConversationFeedback?
-    let startedAt: Date
-    var endedAt: Date?
-    
-    enum CodingKeys: String, CodingKey {
-        case id
-        case profileId = "profile_id"
-        case scenarioId = "scenario_id"
-        case messages
-        case grammarScore = "grammar_score"
-        case vocabularyScore = "vocabulary_score"
-        case fluencyScore = "fluency_score"
-        case overallScore = "overall_score"
-        case feedback
-        case startedAt = "started_at"
-        case endedAt = "ended_at"
-    }
-}
-
-struct ChatMessage: Codable, Identifiable {
-    let id: UUID
-    let role: MessageRole
-    let content: String
-    let timestamp: Date
-    var correction: String?
-    var alternatives: [String]?
-}
 
 enum MessageRole: String, Codable {
     case user
     case assistant
     case system
-}
-
-struct ConversationFeedback: Codable {
-    let summary: String
-    let strengths: [String]
-    let improvements: [String]
-    let suggestedVocabulary: [String]?
 }
 
 struct GrammarTopicWithProgress: Identifiable {
@@ -595,5 +554,80 @@ struct GrammarExercise: Codable, Identifiable {
         case timesServed = "times_served"
         case timesCorrect = "times_correct"
         case createdAt = "created_at"
+    }
+}
+
+// MARK: - Conversation
+struct Conversation: Codable, Identifiable {
+    let id: UUID
+    let userId: String
+    let scenarioId: UUID
+    var status: ConversationStatus
+    let startedAt: Date?
+    var completedAt: Date?
+    var messageCount: Int
+    var correctionsCount: Int
+    var vocabularyPracticed: [String]?
+    
+    enum CodingKeys: String, CodingKey {
+        case id
+        case userId = "user_id"
+        case scenarioId = "scenario_id"
+        case status
+        case startedAt = "started_at"
+        case completedAt = "completed_at"
+        case messageCount = "message_count"
+        case correctionsCount = "corrections_count"
+        case vocabularyPracticed = "vocabulary_practiced"
+    }
+}
+
+enum ConversationStatus: String, Codable {
+    case active
+    case completed
+    case abandoned
+}
+
+// MARK: - Conversation Message
+struct ConversationMessage: Codable, Identifiable {
+    let id: UUID
+    let conversationId: UUID
+    let role: MessageRole
+    let content: String
+    let correction: String?
+    let vocabularyUsed: [String]?
+    let isGoalComplete: Bool
+    let createdAt: Date?
+    let sortOrder: Int
+    
+    enum CodingKeys: String, CodingKey {
+        case id
+        case conversationId = "conversation_id"
+        case role, content, correction
+        case vocabularyUsed = "vocabulary_used"
+        case isGoalComplete = "is_goal_complete"
+        case createdAt = "created_at"
+        case sortOrder = "sort_order"
+    }
+}
+
+
+// MARK: - Chat API Response (from Edge Function)
+struct ChatAPIResponse: Codable {
+    let success: Bool
+    let data: ChatResponseData?
+    let error: String?
+}
+
+struct ChatResponseData: Codable {
+    let message: String
+    let correction: String?
+    let isGoalComplete: Bool
+    let vocabularyUsed: [String]
+    
+    enum CodingKeys: String, CodingKey {
+        case message, correction
+        case isGoalComplete = "is_goal_complete"
+        case vocabularyUsed = "vocabulary_used"
     }
 }

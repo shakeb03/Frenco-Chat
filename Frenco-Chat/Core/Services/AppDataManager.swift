@@ -20,6 +20,7 @@ class AppDataManager: ObservableObject {
     let vocabularyService = VocabularyService()
     let conversationService = ConversationService()
     let grammarService = GrammarService()
+    let chatService = ChatService()
     
     // App state
     @Published var isInitialized = false
@@ -32,7 +33,7 @@ class AppDataManager: ObservableObject {
     @Published private(set) var units: [Unit] = []
     @Published private(set) var weeklyActivity: [DailyActivity] = []
     @Published private(set) var scenarios: [ConversationScenario] = []
-    @Published private(set) var recentConversations: [UserConversation] = []
+    @Published private(set) var recentConversations: [Conversation] = []
     @Published private(set) var vocabularyCategories: [VocabularyCategory] = []
     @Published private(set) var wordsToReview: [UserVocabulary] = []
     @Published private(set) var grammarTopics: [GrammarTopic] = []
@@ -45,6 +46,10 @@ class AppDataManager: ObservableObject {
     var totalLessonsCompleted: Int { stats?.totalLessonsCompleted ?? 0 }
     var totalMinutesPracticed: Int { stats?.totalMinutesPracticed ?? 0 }
     var totalConversations: Int { stats?.totalConversations ?? 0 }
+    
+    var userId: String? {
+        profile?.id.uuidString
+    }
     
     var allLessonsFlat: [Lesson] {
         units
