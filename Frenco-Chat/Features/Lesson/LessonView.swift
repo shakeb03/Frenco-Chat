@@ -222,7 +222,7 @@ struct LessonView: View {
         errorMessage = nil
         startTime = Date()
         
-        print("📖 LessonView: Loading lesson \(lesson.id)")
+        Log.debug("📖 LessonView: Loading lesson \(lesson.id)")
         
         // Check for existing progress and resume
         if let profileId = appData.profile?.id {
@@ -236,7 +236,7 @@ struct LessonView: View {
                 // If not completed, resume from where left off
                 if existingProgress.status != .completed {
                     let resumeIndex = existingProgress.currentExerciseIndex ?? 0
-                    print("📖 LessonView: Resuming from exercise \(resumeIndex + 1)")
+                    Log.debug("📖 LessonView: Resuming from exercise \(resumeIndex + 1)")
                     
                     // We'll set currentExerciseIndex after loading exercises
                     await MainActor.run {
@@ -245,17 +245,17 @@ struct LessonView: View {
                     }
                 } else {
                     // Lesson was completed, start fresh for review
-                    print("📖 LessonView: Lesson already completed, starting review")
+                    Log.debug("📖 LessonView: Lesson already completed, starting review")
                 }
             } else {
                 // No existing progress, create new
-                print("📖 LessonView: Starting fresh progress tracking...")
+                Log.debug("📖 LessonView: Starting fresh progress tracking...")
                 if let progress = await appData.progressService.startLesson(
                     profileId: profileId,
                     lessonId: lesson.id
                 ) {
                     lessonProgressId = progress.id
-                    print("✅ LessonView: Progress tracking started - ID: \(progress.id)")
+                    Log.debug("✅ LessonView: Progress tracking started - ID: \(progress.id)")
                 }
             }
         }
@@ -272,13 +272,13 @@ struct LessonView: View {
                     self.currentExerciseIndex = 0
                 }
                 
-                print("✅ LessonView: Loaded \(loadedExercises.count) exercises")
-                print("📍 Starting at exercise \(self.currentExerciseIndex + 1)")
+                Log.debug("✅ LessonView: Loaded \(loadedExercises.count) exercises")
+                Log.debug("📍 Starting at exercise \(self.currentExerciseIndex + 1)")
             }
         } else {
             await MainActor.run {
                 errorMessage = "Could not load lesson data"
-                print("❌ LessonView: Failed to fetch lesson")
+                Log.debug("❌ LessonView: Failed to fetch lesson")
             }
         }
         
@@ -291,7 +291,7 @@ struct LessonView: View {
     private func handleExerciseComplete(correct: Bool) {
         // Prevent multiple calls for same exercise
         let completedIndex = currentExerciseIndex
-        print("📝 Exercise \(completedIndex + 1) completed - Correct: \(correct)")
+        Log.debug("📝 Exercise \(completedIndex + 1) completed - Correct: \(correct)")
         
         if correct {
             score += 1
@@ -309,7 +309,7 @@ struct LessonView: View {
                     exercisesCompleted: nextIndex,
                     progressPercentage: progressPercentage
                 )
-                print("📊 Progress saved: \(Int(progressPercentage * 100))%")
+                Log.debug("📊 Progress saved: \(Int(progressPercentage * 100))%")
             }
         }
         
@@ -318,17 +318,17 @@ struct LessonView: View {
             currentExerciseIndex = completedIndex + 1
         }
         
-        print("📍 Moving to exercise index: \(currentExerciseIndex), total: \(exercises.count)")
+        Log.debug("📍 Moving to exercise index: \(currentExerciseIndex), total: \(exercises.count)")
     }
     
     // MARK: - Complete Lesson
     private func completeLesson() async {
         guard let profileId = appData.profile?.id else {
-            print("❌ Cannot complete lesson: No profile")
+            Log.debug("❌ Cannot complete lesson: No profile")
             return
         }
         
-        print("🎉 Completing lesson...")
+        Log.debug("🎉 Completing lesson...")
         
         let timeSpent = Int(Date().timeIntervalSince(startTime) / 60)
         let xpEarned = lesson.xpReward
@@ -340,24 +340,24 @@ struct LessonView: View {
                 score: score,
                 xpEarned: xpEarned
             )
-            print("✅ Lesson progress marked complete")
+            Log.debug("✅ Lesson progress marked complete")
         }
         
         // 2. Add XP
         await appData.profileService.addXP(amount: xpEarned)
-        print("✅ Added \(xpEarned) XP")
+        Log.debug("✅ Added \(xpEarned) XP")
         
         // 3. Increment lessons completed
         await appData.profileService.incrementLessonsCompleted()
-        print("✅ Lessons count incremented")
+        Log.debug("✅ Lessons count incremented")
         
         // 4. Update streak
         await appData.profileService.updateStreak()
-        print("✅ Streak updated")
+        Log.debug("✅ Streak updated")
         
         // 5. Add minutes practiced
         await appData.profileService.addMinutesPracticed(minutes: max(timeSpent, 1))
-        print("✅ Minutes practiced updated")
+        Log.debug("✅ Minutes practiced updated")
         
         // 6. Log daily activity
         await appData.progressService.logActivity(
@@ -366,18 +366,18 @@ struct LessonView: View {
             xp: xpEarned,
             lessonsCompleted: 1
         )
-        print("✅ Daily activity logged")
+        Log.debug("✅ Daily activity logged")
         
         // 7. Add vocabulary from this lesson to user's vocabulary
         await appData.vocabularyService.addVocabularyFromLesson(
             profileId: profileId,
             lessonId: lesson.id
         )
-        print("✅ Vocabulary added to user")
+        Log.debug("✅ Vocabulary added to user")
         
         // 8. Refresh app data
         await appData.refreshData()
-        print("🎉 Lesson completion saved!")
+        Log.debug("🎉 Lesson completion saved!")
     }
 }
 

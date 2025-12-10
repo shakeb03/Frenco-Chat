@@ -24,13 +24,13 @@ class AudioService: ObservableObject {
             try AVAudioSession.sharedInstance().setCategory(.playback, mode: .default)
             try AVAudioSession.sharedInstance().setActive(true)
         } catch {
-            print("❌ AudioService: Failed to setup audio session - \(error)")
+            Log.debug("❌ AudioService: Failed to setup audio session - \(error)")
         }
     }
     
     func play(url: String) {
         guard let audioURL = URL(string: url) else {
-            print("❌ AudioService: Invalid URL - \(url)")
+            Log.debug("❌ AudioService: Invalid URL - \(url)")
             return
         }
         
@@ -38,7 +38,7 @@ class AudioService: ObservableObject {
         player?.pause()
         player = nil
         
-        print("🔊 AudioService: Playing \(url)")
+        Log.debug("🔊 AudioService: Playing \(url)")
         
         let playerItem = AVPlayerItem(url: audioURL)
         player = AVPlayer(playerItem: playerItem)

@@ -80,7 +80,7 @@ class ConversationViewModel: ObservableObject {
         } catch {
             self.error = "Failed to start conversation. Please try again."
             self.showError = true
-            print("❌ Start conversation error: \(error)")
+            Log.debug("❌ Start conversation error: \(error)")
         }
         
         isLoading = false
@@ -152,7 +152,7 @@ class ConversationViewModel: ObservableObject {
             self.error = "Something went wrong. Please try again."
             self.showError = true
             await endConversationWithError()
-            print("❌ Send message error: \(error)")
+            Log.debug("❌ Send message error: \(error)")
         }
         
         isLoading = false
@@ -177,7 +177,7 @@ class ConversationViewModel: ObservableObject {
             isConversationComplete = true
             
         } catch {
-            print("❌ Complete conversation error: \(error)")
+            Log.debug("❌ Complete conversation error: \(error)")
         }
     }
     
@@ -191,7 +191,7 @@ class ConversationViewModel: ObservableObject {
                 status: .abandoned
             )
         } catch {
-            print("❌ End conversation error: \(error)")
+            Log.debug("❌ End conversation error: \(error)")
         }
     }
 }

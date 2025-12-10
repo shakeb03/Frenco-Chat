@@ -3,7 +3,6 @@
 //  Frenco-Chat
 //
 //  Created by Shakeb . on 2025-11-27.
-// pk_test_bG92aW5nLXBvc3N1bS03LmNsZXJrLmFjY291bnRzLmRldiQ
 //
 
 import SwiftUI
@@ -31,17 +30,19 @@ struct Frenco_ChatApp: App {
             }
             // Listen for auth state changes
             .onChange(of: clerk.user?.id) { oldValue, newValue in
-                print("🔐 Auth state changed: \(oldValue ?? "nil") -> \(newValue ?? "nil")")
+                Log.debug("🔐 Auth state changed: \(oldValue ?? "nil") -> \(newValue ?? "nil")")
                 Task {
                     if let user = clerk.user {
-                        print("✅ User signed in: \(user.id)")
+                        Log.debug("✅ User signed in: \(user.id)")
+                        SupabaseManager.shared.setUserId(user.id)
                         await appData.initializeForUser(
                             clerkUserId: user.id,
                             email: user.primaryEmailAddress?.emailAddress,
                             displayName: user.firstName
                         )
                     } else {
-                        print("👋 User signed out")
+                        Log.debug("👋 User signed out")
+                        SupabaseManager.shared.clearUser()
                         appData.clearData()
                     }
                 }
@@ -51,35 +52,36 @@ struct Frenco_ChatApp: App {
     }
     
     private func initializeApp() async {
-        print("🚀 Initializing app...")
+        Log.debug("🚀 Initializing app...")
         
         // Configure Clerk
         // ⚠️ REPLACE WITH YOUR ACTUAL CLERK PUBLISHABLE KEY
-        clerk.configure(publishableKey: "pk_test_bG92aW5nLXBvc3N1bS03LmNsZXJrLmFjY291bnRzLmRldiQ")
-        print("✅ Clerk configured")
+        clerk.configure(publishableKey: "pk_test_YmlnLW1hY2F3LTQuY2xlcmsuYWNjb3VudHMuZGV2JA")
+        Log.debug("✅ Clerk configured")
         
         // Load Clerk
         do {
             try await clerk.load()
-            print("✅ Clerk loaded")
+            Log.debug("✅ Clerk loaded")
         } catch {
-            print("❌ Clerk load error: \(error)")
+            Log.debug("❌ Clerk load error: \(error)")
         }
         
         // If user is signed in, initialize app data
         if let user = clerk.user {
-            print("👤 Found existing user: \(user.id)")
+            Log.debug("👤 Found existing user: \(user.id)")
+            SupabaseManager.shared.setUserId(user.id)
             await appData.initializeForUser(
                 clerkUserId: user.id,
                 email: user.primaryEmailAddress?.emailAddress,
                 displayName: user.firstName
             )
         } else {
-            print("👤 No user signed in")
+            Log.debug("👤 No user signed in")
         }
         
         isLoading = false
-        print("🎉 App initialization complete")
+        Log.debug("🎉 App initialization complete")
     }
 }
 

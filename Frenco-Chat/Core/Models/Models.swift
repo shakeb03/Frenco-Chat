@@ -458,7 +458,7 @@ struct UserGrammarProgress: Codable, Identifiable {
     var masteryPercentage: Double
     var exercisesCompleted: Int
     var uniqueDaysCorrect: Int?
-    var lastCorrectDate: Date?
+    var lastCorrectDate: String?
     var lastPracticedAt: Date?
     let createdAt: Date?
     var updatedAt: Date?

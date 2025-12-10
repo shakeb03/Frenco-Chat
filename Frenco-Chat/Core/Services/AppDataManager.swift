@@ -132,12 +132,12 @@ class AppDataManager: ObservableObject {
         isLoading = true
         errorMessage = nil
         
-        print("🎯 AppDataManager: Initializing for user \(clerkUserId)")
+        Log.debug("🎯 AppDataManager: Initializing for user \(clerkUserId)")
         
         defer {
             isLoading = false
             isInitialized = true
-            print("🎯 AppDataManager: Initialization complete")
+            Log.debug("🎯 AppDataManager: Initialization complete")
         }
         
         // 1. Get or create profile
@@ -155,11 +155,11 @@ class AppDataManager: ObservableObject {
         
         guard let profile = self.profile else {
             errorMessage = "Failed to load profile"
-            print("❌ AppDataManager: No profile created")
+            Log.debug("❌ AppDataManager: No profile created")
             return
         }
         
-        print("🎯 AppDataManager: Profile loaded, fetching content...")
+        Log.debug("🎯 AppDataManager: Profile loaded, fetching content...")
         
         // 2. Load content
         await contentService.fetchLevels()
@@ -176,11 +176,11 @@ class AppDataManager: ObservableObject {
         // Sync all data to published properties
         syncData()
         
-        print("🎯 AppDataManager: All data synced")
-        print("   - Units: \(units.count)")
-        print("   - Scenarios: \(scenarios.count)")
-        print("   - Grammar Topics: \(grammarTopics.count)")
-        print("   - Vocabulary Categories: \(vocabularyCategories.count)")
+        Log.debug("🎯 AppDataManager: All data synced")
+        Log.debug("   - Units: \(units.count)")
+        Log.debug("   - Scenarios: \(scenarios.count)")
+        Log.debug("   - Grammar Topics: \(grammarTopics.count)")
+        Log.debug("   - Vocabulary Categories: \(vocabularyCategories.count)")
     }
     
     // MARK: - Sync Data from Services
@@ -200,7 +200,7 @@ class AppDataManager: ObservableObject {
     func refreshData() async {
         guard let profile = profile else { return }
         
-        print("🔄 AppDataManager: Refreshing data...")
+        Log.debug("🔄 AppDataManager: Refreshing data...")
         
         await profileService.fetchStats()
         await contentService.fetchUnits(levelCode: profile.currentLevel, profileId: profile.id)
@@ -211,12 +211,12 @@ class AppDataManager: ObservableObject {
         // Sync updated data
         syncData()
         
-        print("🔄 AppDataManager: Refresh complete")
+        Log.debug("🔄 AppDataManager: Refresh complete")
     }
     
     // MARK: - Clear on Sign Out
     func clearData() {
-        print("🧹 AppDataManager: Clearing all data")
+        Log.debug("🧹 AppDataManager: Clearing all data")
         
         profileService.profile = nil
         profileService.stats = nil

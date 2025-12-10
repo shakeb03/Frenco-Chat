@@ -563,6 +563,7 @@ struct SettingsSection: View {
     @Binding var showVoiceSettings: Bool
     @Binding var showAbout: Bool
     @State private var showSignOutConfirmation = false
+    @State private var showDeleteAccountAlert = false
     
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -615,6 +616,44 @@ struct SettingsSection: View {
                         }
                         .padding(.vertical, 14)
                     }
+                    
+                    Divider().padding(.leading, 48)
+                    
+                    // Delete Account
+
+                    Button(role: .destructive) {
+                        showDeleteAccountAlert = true
+                    } label: {
+                        HStack(spacing: 16) {
+                            Image(systemName: "trash")
+                                .frame(width: 24)
+                            
+                            Text("Delete Account")
+                                .font(.system(size: 15, weight: .regular, design: .rounded))
+                            
+                            Spacer()
+                        }
+                        .padding(.vertical, 14)
+                        .foregroundColor(.red.opacity(0.8))
+                    }
+                    .alert("Delete Account?", isPresented: $showDeleteAccountAlert) {
+                        Button("Cancel", role: .cancel) { }
+                        Button("Delete", role: .destructive) {
+                            Task {
+                                do {
+                                    // 1. Delete user data from Supabase
+                                    try await SupabaseManager.shared.deleteUserAccount()
+                                    
+                                    // 2. Sign out from Clerk
+                                    try await clerk.signOut()
+                                } catch {
+                                    print("Delete account error: \(error)")
+                                }
+                            }
+                        }
+                    } message: {
+                        Text("This will permanently delete your account and all your learning progress. This cannot be undone.")
+                    }
                 }
             }
         }
@@ -626,6 +665,7 @@ struct SettingsSection: View {
             Button("Sign Out", role: .destructive) {
                 Task {
                     try? await clerk.signOut()
+                    SupabaseManager.shared.clearUser()
                 }
             }
             Button("Cancel", role: .cancel) {}

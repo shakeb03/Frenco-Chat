@@ -15,18 +15,90 @@ import Supabase
 import Combine
 
 // MARK: - Supabase Configuration
-// ⚠️ REPLACE THESE WITH YOUR ACTUAL SUPABASE CREDENTIALS
-// Get them from: Supabase Dashboard → Settings → API
-enum SupabaseConfig {
-    static let url = URL(string: "https://wkxgzvuhljysvijfyctq.supabase.co")!
-    static let anonKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndreGd6dnVobGp5c3ZpamZ5Y3RxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQzMDQyMjQsImV4cCI6MjA3OTg4MDIyNH0.8xOxew9XvzSqXZlH9FOrCR9gCBHNE9bvQVkqQd1Wzt0"
+//enum SupabaseConfig {
+//    static let url = URL(string: "https://wkxgzvuhljysvijfyctq.supabase.co")!
+//    static let anonKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndreGd6dnVobGp5c3ZpamZ5Y3RxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQzMDQyMjQsImV4cCI6MjA3OTg4MDIyNH0.8xOxew9XvzSqXZlH9FOrCR9gCBHNE9bvQVkqQd1Wzt0"
+//}
+
+// MARK: - Supabase Manager (Handles User Headers for RLS)
+class SupabaseManager {
+    static let shared = SupabaseManager()
+    
+    private(set) var client: SupabaseClient
+    private var currentUserId: String?
+    
+    var userId: String? {
+            currentUserId
+        }
+    
+    private let supabaseURL = "https://wkxgzvuhljysvijfyctq.supabase.co"
+    private let supabaseKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndreGd6dnVobGp5c3ZpamZ5Y3RxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQzMDQyMjQsImV4cCI6MjA3OTg4MDIyNH0.8xOxew9XvzSqXZlH9FOrCR9gCBHNE9bvQVkqQd1Wzt0"
+    
+    private init() {
+        client = SupabaseClient(
+            supabaseURL: URL(string: supabaseURL)!,
+            supabaseKey: supabaseKey
+        )
+    }
+    
+    func setUserId(_ userId: String) {
+        guard userId != currentUserId else { return }
+        currentUserId = userId
+        client = SupabaseClient(
+            supabaseURL: URL(string: supabaseURL)!,
+            supabaseKey: supabaseKey,
+            options: SupabaseClientOptions(
+                global: SupabaseClientOptions.GlobalOptions(
+                    headers: ["x-user-id": userId]
+                )
+            )
+        )
+        Log.debug("✅ Supabase configured for user: \(userId)")
+    }
+    
+    func clearUser() {
+        currentUserId = nil
+        client = SupabaseClient(
+            supabaseURL: URL(string: supabaseURL)!,
+            supabaseKey: supabaseKey
+        )
+    }
+    
+    func deleteUserAccount() async throws {
+        guard let clerkUserId = userId else { return }
+        
+        struct ProfileId: Decodable {
+            let id: UUID
+        }
+        
+        // Get the profile UUID first
+        let profiles: [ProfileId] = try await client
+            .from("profiles")
+            .select("id")
+            .eq("clerk_user_id", value: clerkUserId)
+            .execute()
+            .value
+        
+        guard let profile = profiles.first else { return }
+        let profileId = profile.id.uuidString
+        
+        // Delete all user data (child tables first)
+        try await client.from("conversations").delete().eq("user_id", value: profileId).execute()
+        try await client.from("user_vocabulary").delete().eq("profile_id", value: profileId).execute()
+        try await client.from("user_lesson_progress").delete().eq("profile_id", value: profileId).execute()
+        try await client.from("user_unit_progress").delete().eq("profile_id", value: profileId).execute()
+        try await client.from("user_grammar_progress").delete().eq("profile_id", value: profileId).execute()
+        try await client.from("daily_activity").delete().eq("profile_id", value: profileId).execute()
+        try await client.from("user_stats").delete().eq("profile_id", value: profileId).execute()
+        
+        // Delete profile last using clerk_user_id (more reliable with RLS)
+        try await client.from("profiles").delete().eq("clerk_user_id", value: clerkUserId).execute()
+    }
 }
 
-// MARK: - Supabase Client Singleton
-let supabase = SupabaseClient(
-    supabaseURL: SupabaseConfig.url,
-    supabaseKey: SupabaseConfig.anonKey
-)
+var supabase: SupabaseClient {
+    SupabaseManager.shared.client
+}
 
 // MARK: - Profile Service
 @MainActor
@@ -41,7 +113,7 @@ class ProfileService: ObservableObject {
         isLoading = true
         defer { isLoading = false }
         
-        print("📝 ProfileService: Getting/creating profile for \(clerkUserId)")
+        Log.debug("📝 ProfileService: Getting/creating profile for \(clerkUserId)")
         
         do {
             // Try to fetch existing profile
@@ -52,17 +124,17 @@ class ProfileService: ObservableObject {
                 .execute()
                 .value
             
-            print("📝 ProfileService: Found \(response.count) existing profiles")
+            Log.debug("📝 ProfileService: Found \(response.count) existing profiles")
             
             if let existing = response.first {
                 self.profile = existing
-                print("✅ ProfileService: Using existing profile: \(existing.id)")
+                Log.debug("✅ ProfileService: Using existing profile: \(existing.id)")
                 await fetchStats()
                 return
             }
             
             // Create new profile
-            print("📝 ProfileService: Creating new profile...")
+            Log.debug("📝 ProfileService: Creating new profile...")
             let newProfile: [String: String] = [
                 "clerk_user_id": clerkUserId,
                 "email": email ?? "",
@@ -78,7 +150,7 @@ class ProfileService: ObservableObject {
             
             if let createdProfile = created.first {
                 self.profile = createdProfile
-                print("✅ ProfileService: Created new profile: \(createdProfile.id)")
+                Log.debug("✅ ProfileService: Created new profile: \(createdProfile.id)")
                 
                 // Create initial stats
                 let newStats: [String: String] = ["profile_id": createdProfile.id.uuidString]
@@ -89,13 +161,13 @@ class ProfileService: ObservableObject {
                     .execute()
                     .value
                 
-                print("✅ ProfileService: Created user stats")
+                Log.debug("✅ ProfileService: Created user stats")
                 await fetchStats()
             }
             
         } catch {
             self.error = error
-            print("❌ ProfileService Error: \(error)")
+            Log.debug("❌ ProfileService Error: \(error)")
         }
     }
     
@@ -112,16 +184,16 @@ class ProfileService: ObservableObject {
             
             // Update local state
             self.stats?.totalConversations += 1
-            print("✅ Incremented total conversations")
+            Log.debug("✅ Incremented total conversations")
         } catch {
-            print("❌ Failed to increment conversations: \(error)")
+            Log.debug("❌ Failed to increment conversations: \(error)")
         }
     }
     
     // MARK: - Fetch Stats
     func fetchStats() async {
         guard let profileId = profile?.id else {
-            print("⚠️ ProfileService: No profile ID for fetching stats")
+            Log.debug("⚠️ ProfileService: No profile ID for fetching stats")
             return
         }
         
@@ -134,9 +206,9 @@ class ProfileService: ObservableObject {
                 .value
             
             self.stats = response.first
-            print("✅ ProfileService: Fetched stats - streak: \(stats?.currentStreak ?? 0)")
+            Log.debug("✅ ProfileService: Fetched stats - streak: \(stats?.currentStreak ?? 0)")
         } catch {
-            print("❌ ProfileService Stats Error: \(error)")
+            Log.debug("❌ ProfileService Stats Error: \(error)")
         }
     }
     
@@ -158,16 +230,16 @@ class ProfileService: ObservableObject {
                 .value
             
             self.profile = response.first
-            print("✅ ProfileService: Profile updated")
+            Log.debug("✅ ProfileService: Profile updated")
         } catch {
-            print("❌ ProfileService Update Error: \(error)")
+            Log.debug("❌ ProfileService Update Error: \(error)")
         }
     }
     
     // MARK: - Add XP
     func addXP(amount: Int) async {
         guard let currentStats = stats else {
-            print("❌ ProfileService: No stats to update")
+            Log.debug("❌ ProfileService: No stats to update")
             return
         }
         
@@ -188,10 +260,10 @@ class ProfileService: ObservableObject {
             
             if let updated = updatedStats.first {
                 self.stats = updated
-                print("✅ ProfileService: XP updated to \(newTotalXP)")
+                Log.debug("✅ ProfileService: XP updated to \(newTotalXP)")
             }
         } catch {
-            print("❌ ProfileService Add XP Error: \(error)")
+            Log.debug("❌ ProfileService Add XP Error: \(error)")
         }
     }
 
@@ -216,10 +288,10 @@ class ProfileService: ObservableObject {
             
             if let updated = updatedStats.first {
                 self.stats = updated
-                print("✅ ProfileService: Lessons completed: \(newCount)")
+                Log.debug("✅ ProfileService: Lessons completed: \(newCount)")
             }
         } catch {
-            print("❌ ProfileService Increment Lessons Error: \(error)")
+            Log.debug("❌ ProfileService Increment Lessons Error: \(error)")
         }
     }
 
@@ -239,20 +311,20 @@ class ProfileService: ObservableObject {
             
             if daysDifference == 0 {
                 // Same day - don't change streak
-                print("📅 ProfileService: Same day, streak unchanged")
+                Log.debug("📅 ProfileService: Same day, streak unchanged")
             } else if daysDifference == 1 {
                 // Consecutive day
                 newStreak += 1
                 longestStreak = max(longestStreak, newStreak)
-                print("🔥 ProfileService: Streak incremented to \(newStreak)")
+                Log.debug("🔥 ProfileService: Streak incremented to \(newStreak)")
             } else {
                 // Streak broken
                 newStreak = 1
-                print("💔 ProfileService: Streak reset to 1")
+                Log.debug("💔 ProfileService: Streak reset to 1")
             }
         } else {
             newStreak = 1
-            print("🆕 ProfileService: First activity, streak = 1")
+            Log.debug("🆕 ProfileService: First activity, streak = 1")
         }
         
         let formatter = ISO8601DateFormatter()
@@ -277,7 +349,7 @@ class ProfileService: ObservableObject {
                 self.stats = updated
             }
         } catch {
-            print("❌ ProfileService Update Streak Error: \(error)")
+            Log.debug("❌ ProfileService Update Streak Error: \(error)")
         }
     }
 
@@ -304,7 +376,7 @@ class ProfileService: ObservableObject {
                 self.stats = updated
             }
         } catch {
-            print("❌ ProfileService Add Minutes Error: \(error)")
+            Log.debug("❌ ProfileService Add Minutes Error: \(error)")
         }
     }
     
@@ -343,11 +415,12 @@ class ProfileService: ObservableObject {
             self.profile?.learningMotivation = learningMotivation
             self.profile?.onboardingCompleted = true
             
-            print("✅ Onboarding completed")
+            Log.debug("✅ Onboarding completed")
         } catch {
-            print("❌ Failed to complete onboarding: \(error)")
+            Log.debug("❌ Failed to complete onboarding: \(error)")
         }
     }
+    
 }
 
 // MARK: - Content Service
@@ -362,7 +435,7 @@ class ContentService: ObservableObject {
         isLoading = true
         defer { isLoading = false }
         
-        print("📚 ContentService: Fetching levels...")
+        Log.debug("📚 ContentService: Fetching levels...")
         
         do {
             let response: [Level] = try await supabase
@@ -373,9 +446,9 @@ class ContentService: ObservableObject {
                 .value
             
             self.levels = response
-            print("✅ ContentService: Fetched \(response.count) levels")
+            Log.debug("✅ ContentService: Fetched \(response.count) levels")
         } catch {
-            print("❌ ContentService Levels Error: \(error)")
+            Log.debug("❌ ContentService Levels Error: \(error)")
         }
     }
     
@@ -384,7 +457,7 @@ class ContentService: ObservableObject {
         isLoading = true
         defer { isLoading = false }
         
-        print("📚 ContentService: Fetching units for level \(levelCode)...")
+        Log.debug("📚 ContentService: Fetching units for level \(levelCode)...")
         
         // Ensure levels are loaded
         if levels.isEmpty {
@@ -392,7 +465,7 @@ class ContentService: ObservableObject {
         }
         
         guard let level = levels.first(where: { $0.code == levelCode }) else {
-            print("⚠️ ContentService: Level \(levelCode) not found")
+            Log.debug("⚠️ ContentService: Level \(levelCode) not found")
             return
         }
         
@@ -407,7 +480,7 @@ class ContentService: ObservableObject {
                 .execute()
                 .value
             
-            print("✅ ContentService: Fetched \(units.count) units")
+            Log.debug("✅ ContentService: Fetched \(units.count) units")
             
             // Collect all lesson IDs
             let allLessonIds = units.flatMap { $0.lessons ?? [] }.map { $0.id.uuidString }
@@ -422,7 +495,7 @@ class ContentService: ObservableObject {
                     .execute()
                     .value
                 
-                print("✅ ContentService: Fetched progress for \(lessonProgress.count) lessons")
+                Log.debug("✅ ContentService: Fetched progress for \(lessonProgress.count) lessons")
                 
                 // Merge progress into lessons
                 for i in 0..<units.count {
@@ -456,7 +529,7 @@ class ContentService: ObservableObject {
             self.currentLevelUnits = units
             
         } catch {
-            print("❌ ContentService Units Error: \(error)")
+            Log.debug("❌ ContentService Units Error: \(error)")
         }
     }
     
@@ -472,7 +545,7 @@ class ContentService: ObservableObject {
             
             return lessons.first
         } catch {
-            print("❌ ContentService Lesson Error: \(error)")
+            Log.debug("❌ ContentService Lesson Error: \(error)")
             return nil
         }
     }
@@ -494,7 +567,7 @@ class ProgressService: ObservableObject {
         formatter.dateFormat = "yyyy-MM-dd"
         let weekAgoString = formatter.string(from: weekAgo)
         
-        print("📊 ProgressService: Fetching weekly activity since \(weekAgoString)...")
+        Log.debug("📊 ProgressService: Fetching weekly activity since \(weekAgoString)...")
         
         do {
             let activities: [DailyActivity] = try await supabase
@@ -507,9 +580,9 @@ class ProgressService: ObservableObject {
                 .value
             
             self.weeklyActivity = activities
-            print("✅ ProgressService: Fetched \(activities.count) daily activities")
+            Log.debug("✅ ProgressService: Fetched \(activities.count) daily activities")
         } catch {
-            print("❌ ProgressService Weekly Error: \(error)")
+            Log.debug("❌ ProgressService Weekly Error: \(error)")
         }
     }
     
@@ -531,7 +604,7 @@ class ProgressService: ObservableObject {
             return !activity.isEmpty
             
         } catch {
-            print("❌ ProgressService Activity Check Error: \(error)")
+            Log.debug("❌ ProgressService Activity Check Error: \(error)")
             return false
         }
     }
@@ -549,7 +622,7 @@ class ProgressService: ObservableObject {
             
             return progress.first
         } catch {
-            print("❌ ProgressService Lesson Progress Error: \(error)")
+            Log.debug("❌ ProgressService Lesson Progress Error: \(error)")
             return nil
         }
     }
@@ -576,7 +649,7 @@ class ProgressService: ObservableObject {
             
             return progress.first
         } catch {
-            print("❌ ProgressService Start Lesson Error: \(error)")
+            Log.debug("❌ ProgressService Start Lesson Error: \(error)")
             return nil
         }
     }
@@ -602,9 +675,9 @@ class ProgressService: ObservableObject {
                 .select()
                 .execute()
                 .value
-            print("✅ ProgressService: Lesson completed")
+            Log.debug("✅ ProgressService: Lesson completed")
         } catch {
-            print("❌ ProgressService Complete Lesson Error: \(error)")
+            Log.debug("❌ ProgressService Complete Lesson Error: \(error)")
         }
     }
     
@@ -629,9 +702,9 @@ class ProgressService: ObservableObject {
                 .select()
                 .execute()
                 .value
-            print("✅ ProgressService: Activity logged")
+            Log.debug("✅ ProgressService: Activity logged")
         } catch {
-            print("❌ ProgressService Log Activity Error: \(error)")
+            Log.debug("❌ ProgressService Log Activity Error: \(error)")
         }
     }
     
@@ -656,9 +729,9 @@ class ProgressService: ObservableObject {
                 .select()
                 .execute()
                 .value
-            print("✅ ProgressService: Progress updated to \(Int(progressPercentage * 100))%")
+            Log.debug("✅ ProgressService: Progress updated to \(Int(progressPercentage * 100))%")
         } catch {
-            print("❌ ProgressService Update Error: \(error)")
+            Log.debug("❌ ProgressService Update Error: \(error)")
         }
     }
 }
@@ -671,7 +744,7 @@ class VocabularyService: ObservableObject {
     
     // MARK: - Fetch Categories with Counts
     func fetchCategories(profileId: UUID) async {
-        print("📖 VocabularyService: Fetching categories...")
+        Log.debug("📖 VocabularyService: Fetching categories...")
         
         do {
             // Get all vocabulary grouped by category
@@ -681,7 +754,7 @@ class VocabularyService: ObservableObject {
                 .execute()
                 .value
             
-            print("✅ VocabularyService: Fetched \(vocab.count) vocabulary words")
+            Log.debug("✅ VocabularyService: Fetched \(vocab.count) vocabulary words")
             
             // Get user's vocabulary progress
             let userVocab: [UserVocabulary] = try await supabase
@@ -718,16 +791,16 @@ class VocabularyService: ObservableObject {
                 )
             }.sorted { $0.name < $1.name }
             
-            print("✅ VocabularyService: Created \(categories.count) categories")
+            Log.debug("✅ VocabularyService: Created \(categories.count) categories")
             
         } catch {
-            print("❌ VocabularyService Categories Error: \(error)")
+            Log.debug("❌ VocabularyService Categories Error: \(error)")
         }
     }
     
     // MARK: - Fetch Vocabulary Categories with Stats
     func fetchVocabularyCategories(profileId: UUID) async -> [VocabularyCategory] {
-        print("📖 VocabularyService: Fetching vocabulary categories...")
+        Log.debug("📖 VocabularyService: Fetching vocabulary categories...")
         
         do {
             // 1. Get all vocabulary grouped by category
@@ -782,11 +855,11 @@ class VocabularyService: ObservableObject {
                 )
             }.sorted { $0.name < $1.name }
             
-            print("✅ VocabularyService: Found \(categories.count) categories")
+            Log.debug("✅ VocabularyService: Found \(categories.count) categories")
             return categories
             
         } catch {
-            print("❌ VocabularyService Categories Error: \(error)")
+            Log.debug("❌ VocabularyService Categories Error: \(error)")
             return []
         }
     }
@@ -797,7 +870,7 @@ class VocabularyService: ObservableObject {
         formatter.dateFormat = "yyyy-MM-dd"
         let today = formatter.string(from: Date())
         
-        print("📖 VocabularyService: Fetching words due for category: \(category)")
+        Log.debug("📖 VocabularyService: Fetching words due for category: \(category)")
         
         do {
             let words: [UserVocabulary] = try await supabase
@@ -810,11 +883,11 @@ class VocabularyService: ObservableObject {
                 .execute()
                 .value
             
-            print("✅ VocabularyService: \(words.count) words due in \(category)")
+            Log.debug("✅ VocabularyService: \(words.count) words due in \(category)")
             return words
             
         } catch {
-            print("❌ VocabularyService Words Due Error: \(error)")
+            Log.debug("❌ VocabularyService Words Due Error: \(error)")
             return []
         }
     }
@@ -825,7 +898,7 @@ class VocabularyService: ObservableObject {
         formatter.dateFormat = "yyyy-MM-dd"
         let today = formatter.string(from: Date())
         
-        print("📖 VocabularyService: Fetching words to review...")
+        Log.debug("📖 VocabularyService: Fetching words to review...")
         
         do {
             let words: [UserVocabulary] = try await supabase
@@ -838,15 +911,15 @@ class VocabularyService: ObservableObject {
                 .value
             
             self.wordsToReview = words
-            print("✅ VocabularyService: \(words.count) words to review")
+            Log.debug("✅ VocabularyService: \(words.count) words to review")
         } catch {
-            print("❌ VocabularyService Words to Review Error: \(error)")
+            Log.debug("❌ VocabularyService Words to Review Error: \(error)")
         }
     }
     
     // MARK: - Add Vocabulary From Completed Lesson
     func addVocabularyFromLesson(profileId: UUID, lessonId: UUID) async {
-        print("📖 VocabularyService: Adding vocabulary from lesson...")
+        Log.debug("📖 VocabularyService: Adding vocabulary from lesson...")
         
         do {
             // 1. Get all vocabulary_intro exercises from this lesson
@@ -858,7 +931,7 @@ class VocabularyService: ObservableObject {
                 .execute()
                 .value
             
-            print("📖 Found \(exercises.count) vocabulary exercises")
+            Log.debug("📖 Found \(exercises.count) vocabulary exercises")
             
             // 2. For each exercise, extract word and find in vocabulary table
             for exercise in exercises {
@@ -876,7 +949,7 @@ class VocabularyService: ObservableObject {
                     .value
                 
                 guard let vocab = vocabRecords.first else {
-                    print("⚠️ Vocabulary not found for word: \(word)")
+                    Log.debug("⚠️ Vocabulary not found for word: \(word)")
                     continue
                 }
                 
@@ -914,22 +987,22 @@ class VocabularyService: ObservableObject {
                         .insert(newUserVocab)
                         .execute()
                     
-                    print("✅ Added vocabulary: \(word)")
+                    Log.debug("✅ Added vocabulary: \(word)")
                 } else {
-                    print("⏭️ Already has vocabulary: \(word)")
+                    Log.debug("⏭️ Already has vocabulary: \(word)")
                 }
             }
             
-            print("✅ VocabularyService: Finished adding vocabulary from lesson")
+            Log.debug("✅ VocabularyService: Finished adding vocabulary from lesson")
             
         } catch {
-            print("❌ VocabularyService Add Vocabulary Error: \(error)")
+            Log.debug("❌ VocabularyService Add Vocabulary Error: \(error)")
         }
     }
     
     // MARK: - Update Review (SM-2 Algorithm with Mastery)
     func updateReview(userVocabId: UUID, isCorrect: Bool) async {
-        print("📖 VocabularyService: Updating review...")
+        Log.debug("📖 VocabularyService: Updating review...")
         
         do {
             // 1. Fetch current user_vocabulary record
@@ -942,7 +1015,7 @@ class VocabularyService: ObservableObject {
                 .value
             
             guard var vocab = records.first else {
-                print("❌ UserVocabulary not found")
+                Log.debug("❌ UserVocabulary not found")
                 return
             }
             
@@ -1042,10 +1115,10 @@ class VocabularyService: ObservableObject {
                 .eq("id", value: userVocabId.uuidString)
                 .execute()
             
-            print("✅ VocabularyService: Review updated - Next: \(nextReviewString), Status: \(status)")
+            Log.debug("✅ VocabularyService: Review updated - Next: \(nextReviewString), Status: \(status)")
             
         } catch {
-            print("❌ VocabularyService Update Review Error: \(error)")
+            Log.debug("❌ VocabularyService Update Review Error: \(error)")
         }
     }
     
@@ -1126,9 +1199,9 @@ class ConversationService {
                 .value
             
             self.scenarios = response
-            print("✅ Fetched \(response.count) scenarios")
+            Log.debug("✅ Fetched \(response.count) scenarios")
         } catch {
-            print("❌ Fetch scenarios error: \(error)")
+            Log.debug("❌ Fetch scenarios error: \(error)")
         }
     }
     
@@ -1145,14 +1218,16 @@ class ConversationService {
                 .value
             
             self.recentConversations = response
-            print("✅ Fetched \(response.count) recent conversations")
+            Log.debug("✅ Fetched \(response.count) recent conversations")
         } catch {
-            print("❌ Fetch recent conversations error: \(error)")
+            Log.debug("❌ Fetch recent conversations error: \(error)")
         }
     }
     
     // MARK: - Create Conversation
     func createConversation(userId: String, scenarioId: UUID) async throws -> Conversation {
+        Log.debug("🔍 Creating conversation for userId: \(userId)")
+        Log.debug("🔍 SupabaseManager currentUserId: \(SupabaseManager.shared.client)")
         let newConversation = NewConversation(
             user_id: userId,
             scenario_id: scenarioId.uuidString,
@@ -1251,7 +1326,7 @@ class GrammarService: ObservableObject {
     
     // MARK: - Fetch Grammar Topics
     func fetchTopics(levelCode: String, profileId: UUID) async {
-        print("📝 GrammarService: Fetching grammar topics...")
+        Log.debug("📝 GrammarService: Fetching grammar topics...")
         
         do {
             let response: [GrammarTopic] = try await supabase
@@ -1262,7 +1337,7 @@ class GrammarService: ObservableObject {
                 .execute()
                 .value
             
-            print("✅ GrammarService: Fetched \(response.count) topics")
+            Log.debug("✅ GrammarService: Fetched \(response.count) topics")
             
             // Fetch user progress
             if !response.isEmpty {
@@ -1287,13 +1362,13 @@ class GrammarService: ObservableObject {
             }
             
         } catch {
-            print("❌ GrammarService Topics Error: \(error)")
+            Log.debug("❌ GrammarService Topics Error: \(error)")
         }
     }
     
     // MARK: - Fetch Grammar Topics with User Progress
     func fetchGrammarTopicsWithProgress(profileId: UUID) async -> [GrammarTopicWithProgress] {
-        print("📖 GrammarService: Fetching grammar topics with progress...")
+        Log.debug("📖 GrammarService: Fetching grammar topics with progress...")
         
         do {
             // 1. Get all grammar topics
@@ -1336,18 +1411,18 @@ class GrammarService: ObservableObject {
                 )
             }
             
-            print("✅ GrammarService: Found \(topicsWithProgress.count) topics")
+            Log.debug("✅ GrammarService: Found \(topicsWithProgress.count) topics")
             return topicsWithProgress
             
         } catch {
-            print("❌ GrammarService Topics with Progress Error: \(error)")
+            Log.debug("❌ GrammarService Topics with Progress Error: \(error)")
             return []
         }
     }
 
     // MARK: - Fetch Grammar Exercises for Topic
     func fetchGrammarExercises(topicId: UUID, difficulty: ClosedRange<Int>? = nil, limit: Int = 10) async -> [GrammarExercise] {
-        print("📖 GrammarService: Fetching exercises for topic...")
+        Log.debug("📖 GrammarService: Fetching exercises for topic...")
         
         do {
             var query = supabase
@@ -1367,18 +1442,18 @@ class GrammarService: ObservableObject {
                 .execute()
                 .value
             
-            print("✅ GrammarService: Found \(exercises.count) exercises")
+            Log.debug("✅ GrammarService: Found \(exercises.count) exercises")
             return exercises
             
         } catch {
-            print("❌ GrammarService Exercises Error: \(error)")
+            Log.debug("❌ GrammarService Exercises Error: \(error)")
             return []
         }
     }
 
     // MARK: - Update Grammar Progress
     func updateGrammarProgress(profileId: UUID, topicId: UUID, isCorrect: Bool) async {
-        print("📖 GrammarService: Updating grammar progress...")
+        Log.debug("📖 GrammarService: Updating grammar progress...")
         
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd"
@@ -1401,14 +1476,18 @@ class GrammarService: ObservableObject {
                 
                 if isCorrect {
                     // Check if new day
-                    if let lastDate = lastCorrectDate {
-                        let lastDateString = formatter.string(from: lastDate)
-                        if lastDateString != todayString {
-                            uniqueDaysCorrect += 1
-                        }
-                    } else {
-                        uniqueDaysCorrect += 1
-                    }
+                    let formatter = DateFormatter()
+                            formatter.dateFormat = "yyyy-MM-dd"
+                            let todayString = formatter.string(from: Date())
+                            
+                            // Compare strings directly
+                            if let lastDateString = progress.lastCorrectDate {
+                                if lastDateString != todayString {
+                                    uniqueDaysCorrect += 1
+                                }
+                            } else {
+                                uniqueDaysCorrect += 1
+                            }
                 }
                 
                 // Calculate mastery percentage (5 unique days = 100%)
@@ -1431,7 +1510,7 @@ class GrammarService: ObservableObject {
                     .eq("id", value: progress.id.uuidString)
                     .execute()
                 
-                print("✅ GrammarService: Progress updated")
+                Log.debug("✅ GrammarService: Progress updated")
                 
             } else {
                 // 2b. Create new progress record
@@ -1450,11 +1529,11 @@ class GrammarService: ObservableObject {
                     .insert(newProgress)
                     .execute()
                 
-                print("✅ GrammarService: Progress created")
+                Log.debug("✅ GrammarService: Progress created")
             }
             
         } catch {
-            print("❌ GrammarService Update Progress Error: \(error)")
+            Log.debug("❌ GrammarService Update Progress Error: \(error)")
         }
     }
 }
